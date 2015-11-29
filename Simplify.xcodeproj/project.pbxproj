@@ -8,6 +8,9 @@
 
 /* Begin PBXBuildFile section */
 		C9382F141C0A9B4C006F5DBF /* main.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C9382F131C0A9B4C006F5DBF /* main.cpp */; };
+		C9382F1E1C0A9BE2006F5DBF /* halfedge.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C9382F1D1C0A9BE2006F5DBF /* halfedge.cpp */; };
+		C9382F201C0A9C1C006F5DBF /* OpenGL.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C9382F1F1C0A9C1C006F5DBF /* OpenGL.framework */; };
+		C9382F221C0A9C21006F5DBF /* GLUT.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C9382F211C0A9C21006F5DBF /* GLUT.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -25,6 +28,12 @@
 /* Begin PBXFileReference section */
 		C9382F101C0A9B4C006F5DBF /* Simplify */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = Simplify; sourceTree = BUILT_PRODUCTS_DIR; };
 		C9382F131C0A9B4C006F5DBF /* main.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = main.cpp; sourceTree = "<group>"; };
+		C9382F1A1C0A9B89006F5DBF /* fileio.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = fileio.h; sourceTree = "<group>"; };
+		C9382F1B1C0A9BB1006F5DBF /* manifold.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = manifold.h; sourceTree = "<group>"; };
+		C9382F1C1C0A9BCB006F5DBF /* halfedge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = halfedge.h; sourceTree = "<group>"; };
+		C9382F1D1C0A9BE2006F5DBF /* halfedge.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = halfedge.cpp; sourceTree = "<group>"; };
+		C9382F1F1C0A9C1C006F5DBF /* OpenGL.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = OpenGL.framework; path = System/Library/Frameworks/OpenGL.framework; sourceTree = SDKROOT; };
+		C9382F211C0A9C21006F5DBF /* GLUT.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = GLUT.framework; path = System/Library/Frameworks/GLUT.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -32,6 +41,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C9382F221C0A9C21006F5DBF /* GLUT.framework in Frameworks */,
+				C9382F201C0A9C1C006F5DBF /* OpenGL.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -41,6 +52,8 @@
 		C9382F071C0A9B4C006F5DBF = {
 			isa = PBXGroup;
 			children = (
+				C9382F211C0A9C21006F5DBF /* GLUT.framework */,
+				C9382F1F1C0A9C1C006F5DBF /* OpenGL.framework */,
 				C9382F121C0A9B4C006F5DBF /* Simplify */,
 				C9382F111C0A9B4C006F5DBF /* Products */,
 			);
@@ -58,6 +71,10 @@
 			isa = PBXGroup;
 			children = (
 				C9382F131C0A9B4C006F5DBF /* main.cpp */,
+				C9382F1D1C0A9BE2006F5DBF /* halfedge.cpp */,
+				C9382F1C1C0A9BCB006F5DBF /* halfedge.h */,
+				C9382F1B1C0A9BB1006F5DBF /* manifold.h */,
+				C9382F1A1C0A9B89006F5DBF /* fileio.h */,
 			);
 			path = Simplify;
 			sourceTree = "<group>";
@@ -119,6 +136,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				C9382F141C0A9B4C006F5DBF /* main.cpp in Sources */,
+				C9382F1E1C0A9BE2006F5DBF /* halfedge.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
