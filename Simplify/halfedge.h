@@ -71,10 +71,8 @@ struct edge {
     halfedge *he;
     
     v3 midpoint() { return (v1->pos + v2->pos)/2; }
-    
-    float getCombinedError() {
-        return (v1->q + v2->q).eval((v1->q.Sv + v2->q.Sv)/(v1->q.n + v2->q.n));
-    }
+    v3 getCombinedPoint() { return (v1->q.Sv + v2->q.Sv)/(v1->q.n + v2->q.n); }
+    float getCombinedError() { return (v1->q + v2->q).eval(getCombinedPoint()); }
     
     void draw() {
         GLfloat white[] = {1.0,1.0,1.0};
@@ -89,9 +87,7 @@ struct edge {
 struct face {
     halfedge *he;
     
-    v3 normal() {
-        return (he->next->next->o->pos - he->o->pos).cross(he->next->next->next->o->pos - he->next->o->pos).normalize();
-    }
+    v3 normal() { return (he->next->next->o->pos - he->o->pos).cross(he->next->next->next->o->pos - he->next->o->pos).normalize(); }
     
     v3 centroid() {
         unsigned int val = 0;

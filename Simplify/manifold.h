@@ -11,10 +11,11 @@
 #include <iostream>
 #include <utility>
 #include <vector>
+#include <queue>
 #include <list>
 #include <map>
 
-#include "halfedge.h"
+#include "element.h"
 
 class manifold {
 private:
@@ -88,7 +89,13 @@ public:
     }
     
     void simplify(const unsigned int count) {
+        std::priority_queue<element, std::vector<element>, elementComp> errors;
+        
         for (auto &e : edges0) {
+            errors.push(e);
+        }
+        
+        while (faces->size() > count) {
             
         }
     }

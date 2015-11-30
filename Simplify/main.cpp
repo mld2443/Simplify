@@ -115,6 +115,8 @@ void keyboard(unsigned char key, int x, int y) {
             break;
             
         case 13: //return
+            m.simplify(target);
+            glutPostRedisplay();
             break;
             
         case 8: //delete

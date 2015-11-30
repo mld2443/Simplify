@@ -34,6 +34,7 @@
 		C9382F1D1C0A9BE2006F5DBF /* halfedge.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = halfedge.cpp; sourceTree = "<group>"; };
 		C9382F1F1C0A9C1C006F5DBF /* OpenGL.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = OpenGL.framework; path = System/Library/Frameworks/OpenGL.framework; sourceTree = SDKROOT; };
 		C9382F211C0A9C21006F5DBF /* GLUT.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = GLUT.framework; path = System/Library/Frameworks/GLUT.framework; sourceTree = SDKROOT; };
+		C9382F231C0D094C006F5DBF /* element.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = element.h; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -75,6 +76,7 @@
 				C9382F1C1C0A9BCB006F5DBF /* halfedge.h */,
 				C9382F1B1C0A9BB1006F5DBF /* manifold.h */,
 				C9382F1A1C0A9B89006F5DBF /* fileio.h */,
+				C9382F231C0D094C006F5DBF /* element.h */,
 			);
 			path = Simplify;
 			sourceTree = "<group>";
