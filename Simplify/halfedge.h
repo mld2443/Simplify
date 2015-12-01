@@ -1,3 +1,4 @@
+
 //
 //  halfedge.h
 //  Simplify
@@ -10,7 +11,9 @@
 
 #include <GLUT/GLUT.h>
 #include <OpenGL/gl.h>
+#include <vector>
 #include <math.h>
+#include <list>
 
 struct v3 {
     float x,y,z;
@@ -40,6 +43,9 @@ struct halfedge {
     face *f;
     vertex *o;
     edge *e;
+    bool valid;
+    
+    unsigned int collapse();
 };
 
 struct qef {
@@ -60,36 +66,68 @@ struct vertex {
     v3 pos;
     qef q;
     halfedge *he;
+    bool valid;
+    
+    ~vertex() {}
     
     void calcQEF() { q = qef(he); }
+    
+    std::vector<vertex*> neighbors() const {
+        std::vector<vertex*> neighborhood;
+        
+        halfedge *trav = he;
+        do {
+            neighborhood.push_back(trav->flip->o);
+            trav = trav->flip->next;
+        } while(trav != he);
+        
+        return neighborhood;
+    }
+    
+    void update(vertex* v) {
+        valid = false;
+        
+        halfedge *trav = he;
+        do {
+            trav->o = v;
+            trav = trav->flip->next;
+        } while(trav != he);
+    }
+    
+    void markEdges();
     
     vertex* operator=(const vertex& v) { pos = v.pos; q = v.q; he = v.he; return this; }
 };
 
 struct edge {
-    vertex *v1, *v2;
     halfedge *he;
+    bool dirty, valid;
     
-    v3 midpoint() { return (v1->pos + v2->pos)/2; }
-    v3 getCombinedPoint() { return (v1->q.Sv + v2->q.Sv)/(v1->q.n + v2->q.n); }
-    float getCombinedError() { return (v1->q + v2->q).eval(getCombinedPoint()); }
+    v3 midpoint() const { return (he->o->pos + he->flip->o->pos)/2; }
+    v3 getNewPt() const { return (he->o->q.Sv + he->flip->o->q.Sv)/(he->o->q.n + he->flip->o->q.n); }
+    float getCombinedError() const { return (he->o->q + he->flip->o->q).eval(getNewPt()); }
     
-    void draw() {
+    unsigned int collapse() { valid = false; return he->collapse(); }
+    
+    void draw() const {
         GLfloat white[] = {1.0,1.0,1.0};
         glMaterialfv(GL_FRONT, GL_AMBIENT, white);
         glBegin(GL_LINES); {
-            glVertex3d(v1->pos.x, v1->pos.y, v1->pos.z);
-            glVertex3d(v2->pos.x, v2->pos.y, v2->pos.z);
+            glVertex3d(he->o->pos.x, he->o->pos.y, he->o->pos.z);
+            glVertex3d(he->flip->o->pos.x, he->flip->o->pos.y, he->flip->o->pos.z);
         } glEnd();
     }
 };
 
 struct face {
     halfedge *he;
+    bool valid;
     
-    v3 normal() { return (he->next->next->o->pos - he->o->pos).cross(he->next->next->next->o->pos - he->next->o->pos).normalize(); }
+    v3 normal() const {
+        return (he->next->next->o->pos - he->o->pos).cross(he->next->next->next->o->pos - he->next->o->pos).normalize();
+    }
     
-    v3 centroid() {
+    v3 centroid() const {
         unsigned int val = 0;
         v3 r = {0,0,0};
         
@@ -103,7 +141,7 @@ struct face {
         return r/val;
     }
     
-    void draw() {
+    void draw() const {
         glBegin(GL_POLYGON); {
             v3 n = normal();
             glNormal3d(n.x, n.y, n.z);

@@ -199,7 +199,7 @@ int main(int argc, char **argv) {
     glutInitWindowPosition(0, 0);
     glutInitWindowSize(WINDOW_WIDTH, WINDOW_HEIGHT);
     window = glutCreateWindow("CSCE 645 - Matthew Dillard");
-    //glutFullScreen();
+    glutFullScreen();
     
     init(argv[1], atoi(argv[2]));
     

@@ -13,18 +13,14 @@
 struct element {
     float value;
     edge *e;
-    bool dirty, invalid;
     
-    element(edge& _e): value(_e.getCombinedError()), e(&_e), dirty(false), invalid(false) {}
-    element(const element& el): value(el.value), e(el.e), dirty(el.dirty), invalid(el.invalid) {}
+    element(edge *_e): value(_e->getCombinedError()), e(_e) {}
+    element(const element& el): value(el.value), e(el.e) {}
     
-    element* operator=(const element& el) {
-        value = el.value;
-        e = el.e;
-        dirty = el.dirty;
-        invalid = el.invalid;
-        return this;
-    }
+    bool dirty() const { return e->dirty; }
+    bool valid() const { return e->valid; }
+    
+    element* operator=(const element& el) { value = el.value; e = el.e; return this; }
 };
 
 class elementComp {
