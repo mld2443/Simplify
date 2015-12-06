@@ -24,8 +24,9 @@ qef::qef(halfedge* he){
 unsigned int halfedge::collapse() {
     unsigned int deleted_faces = 0;
     
-    //just in case the vertex we're keeping points to the edge we're deleting
+    //update origin points
     o->he = prev->flip;
+    flip->o->update(o);
     
     //remove this halfedge
     valid = false;
@@ -56,9 +57,6 @@ unsigned int halfedge::collapse() {
         prev->next = next;
         next->prev = prev;
     }
-    
-    //update origin points
-    flip->o->update(o);
     
     //remove opposite halfedge
     flip->valid = false;

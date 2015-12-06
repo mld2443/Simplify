@@ -9,8 +9,11 @@
 #ifndef halfedge_h
 #define halfedge_h
 
-#include <GLUT/GLUT.h>
-#include <OpenGL/gl.h>
+#ifdef __APPLE__
+#include <GLUT/glut.h>
+#else
+#include <GL/glut.h>
+#endif
 #include <vector>
 #include <math.h>
 #include <list>
@@ -101,7 +104,7 @@ struct vertex {
 
 struct edge {
     halfedge *he;
-    bool dirty, valid;
+    bool dirty, unsafe, valid;
     
     v3 midpoint() const { return (he->o->pos + he->flip->o->pos)/2; }
     v3 getNewPt() const { return (he->o->q.Sv + he->flip->o->q.Sv)/(he->o->q.n + he->flip->o->q.n); }
@@ -153,6 +156,13 @@ struct face {
             } while(trav != he);
         } glEnd();
     }
+};
+
+struct invalid {
+    bool operator() (const halfedge& h) { return !h.valid; }
+    bool operator() (const vertex& v) { return !v.valid; }
+    bool operator() (const edge& e) { return !e.valid; }
+    bool operator() (const face& f) { return !f.valid; }
 };
 
 #endif /* halfedge_h */

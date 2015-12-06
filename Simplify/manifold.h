@@ -25,24 +25,25 @@ private:
     
     std::map<std::pair<vertex*, vertex*>, edge*> edge_hash;
     
-    unsigned int deleted_faces;
+    unsigned long deleted_faces;
     
-    edge* get_edge(std::list<edge>& edge_list, vertex *v1, vertex* v2) {
+    edge* get_edge(vertex *v1, vertex* v2) {
         auto key = std::pair<vertex*, vertex*>((v1 > v2)? v1 : v2, (v1 > v2)? v2 : v1);
         auto ii = edge_hash.find(key);
         
         if (ii != edge_hash.end())
             return ii->second;
         
-        edge_list.push_back({nullptr, false, true});
+        edges.push_back({nullptr, false, false, true});
         
-        return edge_hash[key] = &edge_list.back();
+        return edge_hash[key] = &edges.back();
     }
     
     // very time expensive
-    bool checkSafety(const vertex* v1, const vertex* v2) const {
-        auto v1nbrs(v1->neighbors());
-        auto v2nbrs(v2->neighbors());
+    // this is the only code that prevents working with non-triangular meshes
+    bool checkSafety(const edge *e) const {
+        auto v1nbrs(e->he->o->neighbors());
+        auto v2nbrs(e->he->flip->o->neighbors());
         std::sort(v1nbrs.begin(), v1nbrs.end());
         std::sort(v2nbrs.begin(), v2nbrs.end());
         std::vector<vertex*> intersect(v1nbrs.size() + v2nbrs.size());
@@ -54,18 +55,59 @@ private:
         return false;
     }
     
-    bool collapse(edge *e) {
-        if (!checkSafety(e->he->o, e->he->flip->o))
-            return false;
-        
+    void collapse(edge *e) {
         auto QEF(e->he->o->q + e->he->flip->o->q);
         e->he->o->pos = e->getNewPt();
-        deleted_faces += e->collapse();
+        deleted_faces += (unsigned long)e->collapse();
         
         e->he->o->q = QEF;
         e->he->o->markEdges();
+    }
+    
+    int verify() {
+        vertices.remove_if(invalid());
+        faces.remove_if(invalid());
+        edges.remove_if(invalid());
+        halfedges.remove_if(invalid());
         
-        return true;
+        int rvalue = 0;
+        
+        for (auto &v : vertices) {
+            if (v.valid) {
+                if (!v.he->valid)
+                    rvalue |= 1<<0;
+            }
+        }
+        for (auto &f : faces) {
+            if (f.valid) {
+                if (!f.he->valid)
+                    rvalue |= 1<<1;
+                if (f.he->next->next->next != f.he)
+                    rvalue |= 1<<2;
+                if (f.he->prev->prev->prev != f.he)
+                    rvalue |= 1<<3;
+            }
+        }
+        for (auto &h : halfedges) {
+            if (h.valid) {
+                if (!h.o->valid)
+                    rvalue |= 1<<4;
+                if (!h.e->valid)
+                    rvalue |= 1<<5;
+                if (!h.f->valid)
+                    rvalue |= 1<<6;
+                if (&h != h.flip->flip)
+                    rvalue |= 1<<7;
+            }
+        }
+        for (auto &e : edges) {
+            if (e.valid) {
+                if (!e.he->valid)
+                    rvalue |= 1<<8;
+            }
+        }
+        
+        return rvalue;
     }
     
 public:
@@ -76,23 +118,27 @@ public:
         return &vertices.back();
     }
     
-    void add_face(const std::vector<vertex*>& ref, const std::vector<unsigned int> verts) {
+    void add_face(const std::list<vertex*>& verts) {
         faces.push_back({nullptr, true});
         
         halfedge *first = nullptr, *prev = nullptr;
         
-        for (int i = 0; i < verts.size(); ++i) {
-            edge *e = get_edge(edges, ref[verts[i]], ref[verts[(i < verts.size() - 1)? i+1 : 0]]);
+        for (auto it = verts.begin(); it != verts.end(); ++it) {
+            auto next = it;
+            if (++next == verts.end())
+                next = verts.begin();
             
-            halfedges.push_back({nullptr,prev,e->he,&faces.back(),ref[verts[i]],e, true});
-            if (i > 0)
+            edge *e = get_edge(*it, *next);
+            
+            halfedges.push_back({nullptr,prev,e->he,&faces.back(),*it,e, true});
+            if (it != verts.begin())
                 prev->next = &halfedges.back();
             
             if (e->he)
                 e->he->flip = &halfedges.back();
             
             e->he = prev = &halfedges.back();
-            if (i == 0)
+            if (it == verts.begin())
                 first = prev;
             
             prev->o->he = prev;
@@ -102,78 +148,86 @@ public:
         first->prev = faces.back().he = &halfedges.back();
     }
     
+    void clear() {
+        vertices.clear();
+        faces.clear();
+        edges.clear();
+        halfedges.clear();
+        
+        edge_hash.clear();
+        
+        deleted_faces = 0;
+    }
+    
     void cleanup() {
         edge_hash.clear();
+        
         deleted_faces = 0;
         
         for (auto &v : vertices)
             v.calcQEF();
+        
+        auto result = verify();
+        if (result)
+            std::cout << "ERROR, CODE " << std::oct << result << std::endl;
     }
     
-    void simplify(const unsigned int count) {
+    void simplify(const unsigned long count) {
         //construct PQ
         std::priority_queue<element, std::vector<element>, elementComp> errors;
         for (auto &e : edges) {
             errors.push(&e);
         }
         
-        std::list<element> unsafe_edges;
-        
         //do the algorithm
         while (faces.size() - deleted_faces > count) {
-            if (!errors.top().dirty()) {
-                if (errors.top().valid()) {
-                    while (!collapse(errors.top().e)) {
-                        std::cout << "unsafe" << std::endl;
-                        unsafe_edges.push_back(errors.top());
+            if (!errors.empty()) {
+                auto  elem = errors.top();
+                if (!elem.dirty()) {
+                    if (elem.valid()) {
+                        if (checkSafety(elem.e)) {
+                            collapse(elem.e);
+                            
+                            auto v = elem.e->he->o;
+                            halfedge *trav = v->he;
+                            do {
+                                if (trav->e->unsafe) {
+                                    trav->e->unsafe = false;
+                                    errors.push(trav->e);
+                                }
+                                trav = trav->flip->next;
+                            } while(trav != v->he);
+                        }
+                        else { //unsafe edge
+                            errors.top().e->unsafe = true;
+                            errors.pop();
+                        }
+                        
+                    }
+                    else { //invalid
                         errors.pop();
                     }
-                    if (!unsafe_edges.empty()) {
-                        for (auto &elem : unsafe_edges)
-                            errors.push(elem);
-                        
-                        unsafe_edges.clear();
-                    }
                 }
-                else {
-                    std::cout << "invalid" << std::endl;
+                else { //dirty
+                    auto e = errors.top().e;
+                    errors.pop();
+                    e->dirty = false;
+                    errors.push(e);
                 }
-                errors.pop();
             }
-            else {
-                auto e = errors.top().e;
-                errors.pop();
-                e->dirty = false;
-                errors.push(e);
+            else { //no more safe edges!
+                deleted_faces = (unsigned int)faces.size();
             }
         }
         
-        //update the manifold's data structures to delete obsolete data
-        for (auto it = vertices.begin(); it != vertices.end(); ++it) {
-            if (!it->valid)
-                vertices.erase(it);
-        }
-        for (auto it = faces.begin(); it != faces.end(); ++it) {
-            if (!it->valid)
-                faces.erase(it);
-        }
-        for (auto it = edges.begin(); it != edges.end(); ++it) {
-            if (!it->valid)
-                edges.erase(it);
-        }
-        for (auto it = halfedges.begin(); it != halfedges.end(); ++it) {
-            if (!it->valid)
-                halfedges.erase(it);
-        }
+        auto result = verify();
+        if (result)
+            std::cout << "ERROR, CODE " << std::oct << result << std::endl;
     }
     
     void draw(const bool drawcontrol) const {
-        for (auto &f : faces) {
-            if (f.valid)
-                f.draw();
-            else
-                std::cout << "invalid!" << std::endl;
-        }
+        for (auto &f : faces)
+            f.draw();
     }
 };
 

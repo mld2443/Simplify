@@ -5,19 +5,23 @@
 //  Created by Matthew Dillard on 11/17/15.
 //
 
+#ifdef __APPLE__
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-
-#include <GLUT/GLUT.h>
-#include <OpenGL/gl.h>
+#include <GLUT/glut.h>
+#else
+#include <GL/glut.h>
+#endif
 #include <stdlib.h>
 
 #include "manifold.h"
 #include "fileio.h"
 
-int WINDOW_WIDTH = 500, WINDOW_HEIGHT = 500;
+int WINDOW_WIDTH = 1440, WINDOW_HEIGHT = 900;
 int window = 0;
 bool drawcontrol = false;
+bool executed = false;
 unsigned int target;
+char* file;
 
 // mouse state
 int prevX = 0, prevY = 0;
@@ -115,8 +119,6 @@ void keyboard(unsigned char key, int x, int y) {
             break;
             
         case 13: //return
-            m.simplify(target);
-            glutPostRedisplay();
             break;
             
         case 8: //delete
@@ -126,6 +128,12 @@ void keyboard(unsigned char key, int x, int y) {
             break;
             
         case ' ':
+            if (!executed)
+                m.simplify(target);
+            else
+                load(file);
+            executed = !executed;
+            glutPostRedisplay();
             break;
             
         case 27: //escape
@@ -165,7 +173,7 @@ void specialkey(int key, int x, int y) {
     }
 }
 
-void init(const char *filename, const unsigned int t) {
+void init(char *filename, const unsigned int t) {
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
     glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
@@ -178,6 +186,7 @@ void init(const char *filename, const unsigned int t) {
     glEnable(GL_CULL_FACE);
     
     load(filename);
+    file = filename;
     target = t;
     
     float dx = xhigh-xlow, dy = yhigh - ylow, dz = zhigh - zlow;
@@ -199,7 +208,7 @@ int main(int argc, char **argv) {
     glutInitWindowPosition(0, 0);
     glutInitWindowSize(WINDOW_WIDTH, WINDOW_HEIGHT);
     window = glutCreateWindow("CSCE 645 - Matthew Dillard");
-    glutFullScreen();
+    //glutFullScreen();
     
     init(argv[1], atoi(argv[2]));
     

@@ -20,7 +20,9 @@ float xlow, ylow, zlow, xhigh, yhigh, zhigh;
 
 manifold m;
 
-void load(const char *filename) {
+void load(const char *filename, const bool invert = false) {
+    m.clear();
+    
     std::vector<vertex*> v_pointers;
     xlow = ylow = zlow = FLT_MAX;
     xhigh = yhigh = zhigh = -FLT_MAX;
@@ -53,11 +55,10 @@ void load(const char *filename) {
                     zhigh = z;
             }
             
-            //vertices.push_back({x,y,z,nullptr});
             v_pointers.push_back(m.add_vert(x, y, z));
         }
         else if (token[0] == 'f') {
-            std::vector<unsigned int> face_verts;
+            std::list<vertex*> face_verts;
             file >> std::ws;
             while (std::isdigit(file.peek())) {
                 std::string vnum;
@@ -67,10 +68,13 @@ void load(const char *filename) {
                 if (found!=std::string::npos)
                     vnum = vnum.substr(0,found);
                 
-                face_verts.push_back(std::stoi(vnum)-1);
+                if (invert)
+                    face_verts.push_front(v_pointers[std::stoul(vnum)-1]);
+                else
+                    face_verts.push_back(v_pointers[std::stoul(vnum)-1]);
             }
             
-            m.add_face(v_pointers, face_verts);
+            m.add_face(face_verts);
         }
     }
     
