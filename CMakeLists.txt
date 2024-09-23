@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.27)
 project(simplify)
 
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 set(SOURCE_FILES src/main.cpp src/halfedge.cpp)
 

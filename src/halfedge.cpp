@@ -7,7 +7,7 @@
 
 #include "halfedge.h"
 
-qef::qef(halfedge* he){
+qef::qef(halfedge* he) {
     n = 0;
     vtv = 0;
     Sv = {0,0,0};
