@@ -5,13 +5,8 @@
 //  Created by Matthew Dillard on 11/17/15.
 //
 
-#ifdef __APPLE__
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#include <GLUT/glut.h>
-#else
 #include <GL/glut.h>
-#endif
-#include <stdlib.h>
+#include <cstdlib>
 
 #include "manifold.h"
 #include "fileio.h"
@@ -33,20 +28,20 @@ float focus[] = {0,0,0};
 
 void display() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    
+
     // Set up viewing matrices
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
     gluPerspective(60, float(WINDOW_WIDTH)/WINDOW_HEIGHT, .0001, 100);
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
-    
+
     //Camera
     glTranslatef(focus[0], focus[1], focus[2]);
     glMultMatrixf(rotMat);
-    
+
     m.draw(drawcontrol);
-    
+
     glFlush();
     glutSwapBuffers();
 }
@@ -59,13 +54,13 @@ void reshape(int width, int height) {
 
 void mouse(int button, int state, int x, int y) {
     y = WINDOW_HEIGHT - y;
-    
+
     // Mouse state that should always be stored on pressing
     if (state == GLUT_DOWN) {
         prevX = x;
         prevY = y;
     }
-    
+
     if (button == GLUT_LEFT_BUTTON) {
         leftPressed = state == GLUT_DOWN;
     }
@@ -79,10 +74,10 @@ void mouse(int button, int state, int x, int y) {
 
 void motion(int x, int y) {
     y = WINDOW_HEIGHT - y;
-    
+
     float dx = (x - prevX);
     float dy = (y - prevY);
-    
+
     // rotate the scene
     if (leftPressed)
     {
@@ -102,11 +97,11 @@ void motion(int x, int y) {
     {
         focus[2] += 0.01 * dy;
     }
-    
+
     // Store previous mouse positions
     prevX = x;
     prevY = y;
-    
+
     glutPostRedisplay();
 }
 
@@ -117,16 +112,16 @@ void keyboard(unsigned char key, int x, int y) {
             drawcontrol = !drawcontrol;
             glutPostRedisplay();
             break;
-            
+
         case 13: //return
             break;
-            
+
         case 8: //delete
             break;
-            
+
         case 127: //backspace
             break;
-            
+
         case ' ':
             if (!executed)
                 m.simplify(target);
@@ -135,12 +130,12 @@ void keyboard(unsigned char key, int x, int y) {
             executed = !executed;
             glutPostRedisplay();
             break;
-            
+
         case 27: //escape
             glutDestroyWindow(window);
             exit(0);
             break;
-            
+
         default:
             break;
     }
@@ -152,22 +147,22 @@ void specialkey(int key, int x, int y) {
             focus[1] -= 0.05;
             glutPostRedisplay();
             break;
-            
+
         case GLUT_KEY_DOWN:
             focus[1] += 0.05;
             glutPostRedisplay();
             break;
-            
+
         case GLUT_KEY_LEFT:
             focus[0] += 0.05;
             glutPostRedisplay();
             break;
-            
+
         case GLUT_KEY_RIGHT:
             focus[0] -= 0.05;
             glutPostRedisplay();
             break;
-            
+
         default:
             break;
     }
@@ -177,20 +172,20 @@ void init(char *filename, const unsigned int t) {
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
     glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
-    
+
     glClearColor(0, 0, 0, 1);
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_LIGHT0);
     glEnable(GL_LIGHTING);
-    
+
     glEnable(GL_CULL_FACE);
-    
+
     load(filename);
     file = filename;
     target = t;
-    
+
     float dx = xhigh-xlow, dy = yhigh - ylow, dz = zhigh - zlow;
-    
+
     if (dx >= dy && dx >= dz) {
         focus[2] -= (4*dx)/5;
     }
@@ -209,16 +204,16 @@ int main(int argc, char **argv) {
     glutInitWindowSize(WINDOW_WIDTH, WINDOW_HEIGHT);
     window = glutCreateWindow("CSCE 645 - Matthew Dillard");
     //glutFullScreen();
-    
+
     init(argv[1], atoi(argv[2]));
-    
+
     glutDisplayFunc(display);
     glutReshapeFunc(reshape);
     glutKeyboardFunc(keyboard);
     glutSpecialFunc(specialkey);
     glutMouseFunc(mouse);
     glutMotionFunc(motion);
-    
+
     // main loop
     glutMainLoop();
 }

@@ -4,22 +4,20 @@
 //
 //  Created by Matthew Dillard on 11/30/15.
 //
-
-#ifndef element_h
-#define element_h
+#pragma once
 
 #include "halfedge.h"
 
 struct element {
     float value;
     edge *e;
-    
+
     element(edge *_e): value(_e->getCombinedError()), e(_e) {}
     element(const element& el): value(el.value), e(el.e) {}
-    
+
     bool dirty() const { return e->dirty; }
     bool valid() const { return e->valid; }
-    
+
     element* operator=(const element& el) { value = el.value; e = el.e; return this; }
 };
 
@@ -31,5 +29,3 @@ public:
         return false;
     }
 };
-
-#endif /* element_h */

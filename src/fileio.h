@@ -4,9 +4,7 @@
 //
 //  Created by Matthew Dillard on 11/8/15.
 //
-
-#ifndef fileio_h
-#define fileio_h
+#pragma once
 
 #include <iostream>
 #include <fstream>
@@ -22,14 +20,14 @@ manifold m;
 
 void load(const char *filename, const bool invert = false) {
     m.clear();
-    
+
     std::vector<vertex*> v_pointers;
     xlow = ylow = zlow = FLT_MAX;
     xhigh = yhigh = zhigh = -FLT_MAX;
-    
+
     std::ifstream file(filename);
     std::string token;
-    
+
     while (!file.eof()) {
         file >> token;
         if(token[0] == '#'){
@@ -39,7 +37,7 @@ void load(const char *filename, const bool invert = false) {
         else if (token[0] == 'v' && token[1] != 'n') {
             float x, y, z;
             file >> x >> y >> z;
-            
+
             {
                 if (x < xlow)
                     xlow = x;
@@ -54,7 +52,7 @@ void load(const char *filename, const bool invert = false) {
                 else if (z > zhigh)
                     zhigh = z;
             }
-            
+
             v_pointers.push_back(m.add_vert(x, y, z));
         }
         else if (token[0] == 'f') {
@@ -63,23 +61,20 @@ void load(const char *filename, const bool invert = false) {
             while (std::isdigit(file.peek())) {
                 std::string vnum;
                 file >> vnum >> std::ws;
-                
+
                 std::size_t found = vnum.find("//");
                 if (found!=std::string::npos)
                     vnum = vnum.substr(0,found);
-                
+
                 if (invert)
                     face_verts.push_front(v_pointers[std::stoul(vnum)-1]);
                 else
                     face_verts.push_back(v_pointers[std::stoul(vnum)-1]);
             }
-            
+
             m.add_face(face_verts);
         }
     }
-    
+
     m.cleanup();
 }
-
-
-#endif /* fileio_h */
