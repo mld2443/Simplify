@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cmath>
+#include <iostream>
 
 
 template <typename T>
@@ -24,5 +25,16 @@ struct v3 {
     T length() const { return std::sqrt(lengthSqr()); }
     v3 normalize() const { return *this / length(); }
 };
+
+template <typename T>
+std::istream& operator>>(std::istream& is, v3<T>& v) {
+    return is >> v.x >> v.y >> v.z;
+}
+
+template <typename T>
+std::ostream& operator<<(std::ostream& os, const v3<T>& v) {
+    return os << v.x << "" << v.y << " " << v.z;
+}
+
 
 using v3f = v3<float>;

@@ -8,20 +8,37 @@
 
 class Manifold {
 private:
-    Edge* get_edge(Vertex *v1, Vertex* v2);
+    template <typename T>
+    struct AABB {
+        struct Dimension {
+            T lo, hi;
+
+            Dimension();
+
+            void addSample(T s);
+            T delta() const;
+            T centroid() const;
+        };
+
+        Dimension x, y, z;
+
+        void addPoint(const v3<T>& v);
+    };
+
+    Edge* getEdge(Vertex *v1, Vertex* v2);
     bool checkSafety(const Edge *e) const;
     void collapse(Edge *e);
+
     int verify();
 
+    Vertex* addPoint(v3f& p);
+    void addFace(const std::list<Vertex*>& verts);
+
 public:
-    Manifold() = default;
+    Manifold(const char* objfile, bool invert = false);
 
-    Vertex* add_vert(const float x, const float y, const float z);
-    void add_face(const std::list<Vertex*>& verts);
-
-    void clear();
-
-    void cleanup();
+    v3f getAABBSizes() const;
+    v3f getAABBCentroid() const;
 
     void simplify(const unsigned long count);
 
@@ -34,6 +51,8 @@ private:
     std::list<Halfedge> halfedges;
 
     std::map<std::pair<Vertex*, Vertex*>, Edge*> edge_hash;
+
+    AABB<float> bounds;
 
     unsigned long deleted_faces;
 };

@@ -2,7 +2,6 @@
 #include <cstdlib>
 
 #include "manifold.h"
-#include "fileio.h"
 
 
 int WINDOW_WIDTH = 1440, WINDOW_HEIGHT = 900;
@@ -10,17 +9,18 @@ int window = 0;
 bool executed = false;
 unsigned int target;
 const char* file;
+Manifold *shape;
 
 // mouse state
 int prevX = 0, prevY = 0;
 bool leftPressed = false, rightPressed = false, middlePressed = false;
 
 // view state
-float rotMat[] = {1,0,0,0,
-                  0,1,0,0,
-                  0,0,1,0,
-                  0,0,0,1};
-float focus[] = {0,0,0};
+float rotMat[16] = { 1, 0, 0, 0,
+                     0, 1, 0, 0,
+                     0, 0, 1, 0,
+                     0, 0, 0, 1 };
+float focus[3] = { 0, 0, 0 };
 
 void display() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -36,7 +36,7 @@ void display() {
     glTranslatef(focus[0], focus[1], focus[2]);
     glMultMatrixf(rotMat);
 
-    m.draw();
+    shape->draw();
 
     glFlush();
     glutSwapBuffers();
@@ -118,9 +118,11 @@ void keyboard(unsigned char key, int x, int y) {
 
         case ' ':
             if (!executed)
-                m.simplify(target);
-            else
-                loadOBJ(file);
+                shape->simplify(target);
+            else {
+                delete shape;
+                shape = new Manifold(file);
+            }
             executed = !executed;
             glutPostRedisplay();
             break;
@@ -164,8 +166,8 @@ void specialkey(int key, int x, int y) {
 
 int main(int argc, char **argv) {
     file = "...";
-    loadOBJ(file);
-    target = 2000;
+    shape = new Manifold(file);
+    target = 2000u;
 
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA | GLUT_DEPTH);
@@ -184,17 +186,14 @@ int main(int argc, char **argv) {
         glEnable(GL_LIGHTING);
         glEnable(GL_CULL_FACE);
 
-        const float dx = bounds.x.delta(), dy = bounds.y.delta(), dz = bounds.z.delta();
+        const v3f deltas = shape->getAABBSizes();
 
-        if (dx >= dy && dx >= dz) {
-            focus[2] -= (4*dx)/5;
-        }
-        else if (dy >= dz) {
-            focus[2] -= (4*dy)/5;
-        }
-        else {
-            focus[2] -= (4*dz)/5;
-        }
+        if (deltas.x >= deltas.y && deltas.x >= deltas.z)
+            focus[2] -= (4*deltas.x)/5;
+        else if (deltas.y >= deltas.z)
+            focus[2] -= (4*deltas.y)/5;
+        else
+            focus[2] -= (4*deltas.z)/5;
     }
 
     glutDisplayFunc(display);

@@ -1,20 +1,56 @@
 #include "manifold.h"
 #include "element.h"
 
-#include <iostream>
-#include <algorithm>
-#include <utility>
-#include <queue>
-
+#include <iostream>  //
+#include <algorithm> //
+#include <utility>   //
+#include <queue>     // priority_queue
+#include <fstream>   // fstream
+#include <string>    // string, getline
+#include <cctype>    // isdigit
+#include <limits>    // numeric_limits::min, max
 
 using namespace std;
+
+
+///////////////////////
+// Bounds, Dimension //
+///////////////////////
+template <typename T>
+Manifold::AABB<T>::Dimension::Dimension()
+  : lo(numeric_limits<T>::max())
+  , hi(numeric_limits<T>::min()) {
+}
+
+template <typename T>
+void Manifold::AABB<T>::Dimension::addSample(T s) {
+    if (s < lo) lo = s;
+    if (s > hi) hi = s;
+}
+
+template <typename T>
+T Manifold::AABB<T>::Dimension::delta() const {
+    return hi - lo;
+}
+
+template <typename T>
+T Manifold::AABB<T>::Dimension::centroid() const {
+    return hi + lo / static_cast<float>(2.0);
+}
+
+template <typename T>
+void Manifold::AABB<T>::addPoint(const v3<T>& v) {
+    x.addSample(v.x);
+    y.addSample(v.y);
+    z.addSample(v.z);
+}
+
 
 //////////////
 // Manifold //
 //////////////
 // PRIVATE FUNCTIONS
-
-Edge* Manifold::get_edge(Vertex *v1, Vertex* v2) {
+Edge* Manifold::getEdge(Vertex *v1, Vertex* v2) {
     auto key = std::pair<Vertex*, Vertex*>(max(v1, v2), min(v1, v2));
 
     if (auto result = edge_hash.find(key); result != edge_hash.end())
@@ -30,12 +66,12 @@ Edge* Manifold::get_edge(Vertex *v1, Vertex* v2) {
 bool Manifold::checkSafety(const Edge *e) const {
     auto v1nbrs(e->he->o->neighbors());
     auto v2nbrs(e->he->flip->o->neighbors());
-    std::sort(v1nbrs.begin(), v1nbrs.end());
-    std::sort(v2nbrs.begin(), v2nbrs.end());
-    std::vector<Vertex*> intersect(v1nbrs.size() + v2nbrs.size());
-    auto it = std::set_intersection(v1nbrs.begin(), v1nbrs.end(), v2nbrs.begin(), v2nbrs.end(), intersect.begin());
+    sort(v1nbrs.begin(), v1nbrs.end());
+    sort(v2nbrs.begin(), v2nbrs.end());
+    vector<Vertex*> intersect(v1nbrs.size() + v2nbrs.size());
+    auto it = set_intersection(v1nbrs.begin(), v1nbrs.end(), v2nbrs.begin(), v2nbrs.end(), intersect.begin());
 
-    if(it-intersect.begin() == 2)
+    if (it-intersect.begin() == 2)
         return true;
 
     return false;
@@ -96,15 +132,12 @@ int Manifold::verify() {
     return rvalue;
 }
 
-
-// PUBLIC FUNCTIONS
-
-Vertex* Manifold::add_vert(const float x, const float y, const float z) {
-    vertices.push_back({ { x,y,z }, {}, nullptr, true });
+Vertex* Manifold::addPoint(v3f& p) {
+    vertices.push_back({ p, {}, nullptr, true });
     return &vertices.back();
 }
 
-void Manifold::add_face(const std::list<Vertex*>& verts) {
+void Manifold::addFace(const std::list<Vertex*>& verts) {
     faces.push_back({ nullptr, true });
 
     Halfedge *first = nullptr, *prev = nullptr;
@@ -114,7 +147,7 @@ void Manifold::add_face(const std::list<Vertex*>& verts) {
         if (++next == verts.end())
             next = verts.begin();
 
-        Edge *e = get_edge(*it, *next);
+        Edge *e = getEdge(*it, *next);
 
         halfedges.push_back({ nullptr, prev, e->he, &faces.back(), *it, e, true });
         if (it != verts.begin())
@@ -134,18 +167,53 @@ void Manifold::add_face(const std::list<Vertex*>& verts) {
     first->prev = faces.back().he = &halfedges.back();
 }
 
-void Manifold::clear() {
-    vertices.clear();
-    faces.clear();
-    edges.clear();
-    halfedges.clear();
 
-    edge_hash.clear();
+// PUBLIC FUNCTIONS
 
-    deleted_faces = 0;
-}
+Manifold::Manifold(const char* objfile, bool invert) {
+    vector<Vertex*> v_pointers;
+    ifstream file(objfile);
+    string token;
 
-void Manifold::cleanup() {
+    while (!file.eof()) {
+        file >> token;
+        // Ignore comments
+        if (token[0] == '#') {
+            string dummy;
+            getline(file, dummy);
+        }
+        // Process vertices, discard normals
+        else if (token[0] == 'v' && token[1] != 'n') {
+            v3f p;
+            file >> p;
+
+            bounds.addPoint(p);
+
+            v_pointers.push_back(addPoint(p));
+        }
+        // Process faces
+        else if (token[0] == 'f') {
+            list<Vertex*> face_verts;
+            file >> ws;
+            while (isdigit(file.peek())) {
+                string vnum;
+                file >> vnum >> ws;
+
+                // Again, discard indices to normals
+                if (size_t found = vnum.find("//"); found != string::npos)
+                    vnum = vnum.substr(0, found);
+
+                // Some models may be inside out
+                if (invert)
+                    face_verts.push_front(v_pointers[stoul(vnum) - 1]);
+                else
+                    face_verts.push_back(v_pointers[stoul(vnum) - 1]);
+            }
+
+            addFace(face_verts);
+        }
+    }
+
     edge_hash.clear();
 
     deleted_faces = 0;
@@ -156,6 +224,14 @@ void Manifold::cleanup() {
     auto result = verify();
     if (result)
         std::cout << "ERROR, CODE " << std::oct << result << std::endl;
+}
+
+v3f Manifold::getAABBSizes() const {
+    return { bounds.x.delta(), bounds.y.delta(), bounds.z.delta() };
+}
+
+v3f Manifold::getAABBCentroid() const {
+    return { bounds.x.centroid(), bounds.y.centroid(), bounds.z.centroid() };
 }
 
 void Manifold::simplify(const unsigned long count) {
@@ -215,4 +291,3 @@ void Manifold::draw() const {
     for (auto &f : faces)
         f.draw();
 }
-
