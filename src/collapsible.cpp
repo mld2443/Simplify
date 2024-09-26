@@ -14,40 +14,30 @@ using namespace std;
 /////////////////
 // QEF, Vertex //
 /////////////////
-QuadraticErrorFunction::QuadraticErrorFunction(float n, const v3f& Sv, float vtv)
-  : n(n)
-  , Sv(Sv)
-  , vtv(vtv) {
+QuadraticErrorFunction::QuadraticErrorFunction(float n, const v3f& Sv, float Svtv): n(n), Sv(Sv), Svtv(Svtv) {
 }
 
-QuadraticErrorFunction::QuadraticErrorFunction(const Halfedge* he) : QuadraticErrorFunction() {
-    const Halfedge *trav = he;
-    do {
+QuadraticErrorFunction::QuadraticErrorFunction(Halfedge* he): QuadraticErrorFunction() {
+    he->traverseVertex([&](Halfedge* it){
         ++n;
-        Sv += trav->flip->v->pos;
-        vtv += trav->flip->v->pos.dot(trav->flip->v->pos);
-        trav = trav->flip->next;
-    } while (trav != he);
+        Sv += it->flip->v->pos;
+        Svtv += it->flip->v->pos.dot(it->flip->v->pos);
+    });
 }
 
 float QuadraticErrorFunction::eval(const v3f& v) const {
-    return n * v.dot(v) - 2 * v.dot(Sv) + vtv;
+    return n * v.dot(v) - 2 * v.dot(Sv) + Svtv;
 }
 
 QuadraticErrorFunction QuadraticErrorFunction::operator+(const QuadraticErrorFunction& qef) const {
-    return { n + qef.n, Sv + qef.Sv, vtv + qef.vtv };
+    return { n + qef.n, Sv + qef.Sv, Svtv + qef.Svtv };
 }
 
-QuadraticErrorFunction& QuadraticErrorFunction::operator=(const QuadraticErrorFunction& qef) {
-    n = qef.n;
-    Sv = qef.Sv;
-    vtv = qef.vtv;
-    return *this;
-}
 
 void QEFVertex::calcQEF() {
     qef = { he };
 }
+
 
 QuadraticErrorFunction& Collapsible::getQEF(Vertex *v) {
     return static_cast<QEFVertex*>(v)->qef;

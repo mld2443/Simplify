@@ -4,6 +4,7 @@
 #include <iostream>  // cout, oct, endl
 #endif
 
+#include <GL/glut.h> // glBegin, glEnd, glMaterialfv, GL_*
 #include <algorithm> // sort, set_intersection
 #include <queue>     // priority_queue
 #include <fstream>   // ifstream
@@ -72,7 +73,7 @@ bool Manifold<VertexType>::checkSafety(const Edge *e) const {
 
 template <class VertexType>
 Vertex* Manifold<VertexType>::addPoint(v3f& p) {
-    m_vertices.push_back(VertexType{ p, nullptr, true });
+    m_vertices.push_back(VertexType{ nullptr, p, true });
     return &m_vertices.back();
 }
 

@@ -1,30 +1,27 @@
 #include "collapsible.h"
 
 #include <GL/freeglut.h> // glut*, gluPerspective, gl*
-#include <cstdlib>   // atoi
-#ifndef NDEBUG
-#include <iostream>  // cout, endl
-#endif
+#include <cstdlib>       // atoi
 
 
 int WINDOW_WIDTH = 1440, WINDOW_HEIGHT = 900;
-int window = 0;
-bool simplified = false;
-unsigned target;
-const char* file;
-Manifold<> *shape;
-bool showFaces = true, showEdges = false, showVertices = false;
+int g_window = 0;
+bool g_simplified = false;
+unsigned g_target = 0u;
+const char *g_fileName;
+Manifold<> *g_shape;
+bool g_showFaces = true, g_showEdges = false, g_showVertices = false;
 
 // mouse state
-int prevX = 0, prevY = 0;
-bool leftPressed = false, rightPressed = false, middlePressed = false;
+int g_prevX = 0, g_prevY = 0;
+bool g_leftPressed = false, g_rightPressed = false, g_middlePressed = false;
 
 // view state
-float modelView[16] = { 1, 0, 0, 0,
-                        0, 1, 0, 0,
-                        0, 0, 1, 0,
-                        0, 0, 0, 1 };
-float focus[3] = { 0, 0, 0 };
+float g_modelView[16] = { 1, 0, 0, 0,
+                          0, 1, 0, 0,
+                          0, 0, 1, 0,
+                          0, 0, 0, 1 };
+float g_focus[3] = { 0, 0, 0 };
 
 static void display() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -32,20 +29,20 @@ static void display() {
     // Set up viewing matrices
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    gluPerspective(60, float(WINDOW_WIDTH)/WINDOW_HEIGHT, .0001, 100);
+    gluPerspective(60.0, double(WINDOW_WIDTH)/double(WINDOW_HEIGHT), 0.0001, 100.0);
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 
     //Camera
-    glTranslatef(focus[0], focus[1], focus[2]);
-    glMultMatrixf(modelView);
+    glTranslatef(g_focus[0], g_focus[1], g_focus[2]);
+    glMultMatrixf(g_modelView);
 
-    if (showVertices)
-        shape->drawVertices();
-    if (showEdges)
-        shape->drawEdges();
-    if (showFaces)
-        shape->drawFaces();
+    if (g_showVertices)
+        g_shape->drawVertices();
+    if (g_showEdges)
+        g_shape->drawEdges();
+    if (g_showFaces)
+        g_shape->drawFaces();
 
     glFlush();
     glutSwapBuffers();
@@ -62,174 +59,160 @@ static void mouse(int button, int state, int x, int y) {
 
     // Mouse state that should always be stored on pressing
     if (state == GLUT_DOWN) {
-        prevX = x;
-        prevY = y;
+        g_prevX = x;
+        g_prevY = y;
     }
 
     if (button == GLUT_LEFT_BUTTON) {
-        leftPressed = state == GLUT_DOWN;
+        g_leftPressed = state == GLUT_DOWN;
     }
     else if (button == GLUT_RIGHT_BUTTON) {
-        rightPressed = state == GLUT_DOWN;
+        g_rightPressed = state == GLUT_DOWN;
     }
     else if (button == GLUT_MIDDLE_BUTTON) {
-        middlePressed = state == GLUT_DOWN;
+        g_middlePressed = state == GLUT_DOWN;
     }
 }
 
 static void motion(int x, int y) {
     y = WINDOW_HEIGHT - y;
 
-    float dx = (x - prevX);
-    float dy = (y - prevY);
+    const float dx = (x - g_prevX);
+    const float dy = (y - g_prevY);
 
     // rotate the scene
-    if (leftPressed)
-    {
+    if (g_leftPressed) {
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
         glRotatef(dx, 0, 1, 0);
         glRotatef(dy, -1, 0, 0);
-        glMultMatrixf(modelView);
-        glGetFloatv(GL_MODELVIEW_MATRIX, modelView);
-    }
-    else if (middlePressed)
-    {
-        focus[0] += 0.005 * dx;
-        focus[1] += 0.005 * dy;
-    }
-    else if (rightPressed)
-    {
-        focus[2] += 0.01 * dy;
+        glMultMatrixf(g_modelView);
+        glGetFloatv(GL_MODELVIEW_MATRIX, g_modelView);
+    } else if (g_middlePressed) {
+        g_focus[0] += 0.005 * dx;
+        g_focus[1] += 0.005 * dy;
+    } else if (g_rightPressed) {
+        g_focus[2] += 0.01 * dy;
     }
 
     // Store previous mouse positions
-    prevX = x;
-    prevY = y;
+    g_prevX = x;
+    g_prevY = y;
 
     glutPostRedisplay();
 }
 
 static void resetViewMatrix() {
     for (int i = 0; i < 16; ++i) {
-        modelView[i] = i % 5 ? 0.0f : 1.0f;
+        g_modelView[i] = i % 5 ? 0.0f : 1.0f;
     }
 
-    const auto offset = -shape->getAABBCentroid();
-    modelView[12] = offset.x;
-    modelView[13] = offset.y;
-    modelView[14] = offset.z;
-    focus[0] = focus[1] = 0.0f;
-    focus[2] = -shape->getAABBSizes().max();
+    const auto offset = -g_shape->getAABBCentroid();
+    g_modelView[12] = offset.x;
+    g_modelView[13] = offset.y;
+    g_modelView[14] = offset.z;
+    g_focus[0] = g_focus[1] = 0.0f;
+    g_focus[2] = -g_shape->getAABBSizes().max();
 }
 
 static void keyboard(unsigned char key, int x, int y) {
     switch(key)
     {
-    case ' ':
-        // if (!executed)
-        //     shape->simplify(target);
-        // else {
-        //     delete shape;
-        //     shape = new Manifold<>(file);
-        // }
-        // executed = !executed;
-        // glutPostRedisplay();
-        break;
+    // case ' ':
+    //     if (g_simplified) {
+    //         delete g_shape;
+    //         g_shape = new Manifold<>(g_fileName);
+    //     } else {
+    //         g_shape->simplify(g_target);
+    //     }
+    //     g_simplified = !g_simplified;
+    //     break;
 
     case 'p':
-        showVertices = !showVertices;
-        glutPostRedisplay();
+        g_showVertices = !g_showVertices;
         break;
     case 'e':
-        showEdges = !showEdges;
-        glutPostRedisplay();
+        g_showEdges = !g_showEdges;
         break;
     case 'f':
-        showFaces = !showFaces;
-        glutPostRedisplay();
+        g_showFaces = !g_showFaces;
         break;
 
     case 9: //tab
-        break;
+        return;
 
     case 13: //return
-        break;
+        return;
 
     case 8: //backspace
         resetViewMatrix();
-        glutPostRedisplay();
         break;
 
     case 127: //delete
-        break;
+        return;
 
     case 114: //leftctrl
-        break;
+        return;
 
     case 115: //rightctrl
-        break;
+        return;
 
     case 116: //leftalt
-        break;
+        return;
 
     case 117: //rightalt
-        break;
+        return;
 
     case 27: //escape
-        glutLeaveMainLoop();
-        break;
+        glutDestroyWindow(g_window);
+        return;
 
     default:
-#ifndef NDEBUG
-        std::cout << "Unknown key code #" << key << std::endl;
-#endif
-        break;
+        return;
     }
+
+    glutPostRedisplay();
 }
 
 static void specialkey(int key, int x, int y) {
     switch (key) {
     case GLUT_KEY_UP:
-        focus[1] -= 0.05;
+        g_focus[1] -= 0.05;
         glutPostRedisplay();
         break;
 
     case GLUT_KEY_DOWN:
-        focus[1] += 0.05;
+        g_focus[1] += 0.05;
         glutPostRedisplay();
         break;
 
     case GLUT_KEY_LEFT:
-        focus[0] += 0.05;
+        g_focus[0] += 0.05;
         glutPostRedisplay();
         break;
 
     case GLUT_KEY_RIGHT:
-        focus[0] -= 0.05;
+        g_focus[0] -= 0.05;
         glutPostRedisplay();
         break;
 
     default:
-#ifndef NDEBUG
-        std::cout << "Unknown key code #" << key << std::endl;
-#endif
         break;
     }
 }
 
 int main(int argc, char **argv) {
     // Load the model
-    file = "...";
-    shape = new Manifold<>(file);
-    target = 2000u;
+    g_fileName = "...";
+    g_shape = new Manifold<>(g_fileName);
+    g_target = 2000u;
 
     // Prepare the window
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA | GLUT_DEPTH);
     glutInitWindowPosition(0, 0);
     glutInitWindowSize(WINDOW_WIDTH, WINDOW_HEIGHT);
-    window = glutCreateWindow("Manifold Surface Simplifier");
+    g_window = glutCreateWindow("Manifold Surface Simplifier");
 
     // Set up our openGL specific parameters
     glMatrixMode(GL_PROJECTION);
@@ -253,14 +236,14 @@ int main(int argc, char **argv) {
     glutMouseFunc(mouse);
     glutMotionFunc(motion);
 
-    // Kick off the main loop
+    // Kick off the main loop, return when window closes
+    glutSetOption(GLUT_ACTION_ON_WINDOW_CLOSE, GLUT_ACTION_CONTINUE_EXECUTION);
     glutMainLoop();
 
     // Clean up upon exit
-    glutDestroyWindow(window);
-    if (shape) {
-        delete shape;
-        shape = nullptr;
+    if (g_shape) {
+        delete g_shape;
+        g_shape = nullptr;
     }
     return 0;
 }

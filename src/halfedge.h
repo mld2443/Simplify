@@ -2,10 +2,7 @@
 
 #include "simd.h"
 
-#include <GL/glut.h>
 #include <vector>
-#include <cmath>
-#include <list>
 #include <functional>
 
 
@@ -27,44 +24,24 @@ struct Halfedge {
 };
 
 struct Vertex {
-    v3f pos;
     Halfedge *he;
+    v3f pos;
     bool valid;
 
-    std::vector<Vertex*> neighbors() const {
-        std::vector<Vertex*> neighborhood;
+    std::vector<Vertex*> neighbors() const;
 
-        Halfedge *trav = he;
-        do {
-            neighborhood.push_back(trav->flip->v);
-            trav = trav->flip->next;
-        } while (trav != he);
-
-        return neighborhood;
-    }
-
-    void update(Vertex* v) {
-        valid = false;
-
-        Halfedge *trav = he;
-        do {
-            trav->v = v;
-            trav = trav->flip->next;
-        } while(trav != he);
-    }
+    void update(Vertex* v);
 
     void markEdges();
 
     void draw() const;
-
-    Vertex* operator=(const Vertex& v) { pos = v.pos; he = v.he; return this; }
 };
 
 struct Edge {
     Halfedge *he;
     bool dirty, unsafe, valid;
 
-    size_t collapse() { valid = false; return he->collapse(); }
+    size_t collapse();
 
     v3f midpoint() const;
 

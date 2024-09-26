@@ -6,16 +6,15 @@
 struct QuadraticErrorFunction {
     float n;
     v3f Sv;
-    float vtv;
+    float Svtv;
 
     QuadraticErrorFunction() = default;
-    QuadraticErrorFunction(float n, const v3f& Sv, float vtv);
-    QuadraticErrorFunction(const Halfedge* he);
+    QuadraticErrorFunction(float n, const v3f& Sv, float Svtv);
+    QuadraticErrorFunction(Halfedge* he);
 
     float eval(const v3f& v) const;
 
     QuadraticErrorFunction operator+(const QuadraticErrorFunction& qef) const;
-    QuadraticErrorFunction& operator=(const QuadraticErrorFunction& qef);
 };
 
 struct QEFVertex : public Vertex {

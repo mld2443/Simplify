@@ -1,5 +1,9 @@
 #include "halfedge.h"
 
+#include <GL/glut.h> // glVertex3fv, glNormal3fv
+
+using namespace std;
+
 
 size_t Halfedge::collapse() {
     size_t deleted_faces = 0ul;
@@ -84,7 +88,23 @@ void Halfedge::traverseFace(std::function<void(Halfedge*)> op) {
 }
 
 
-//void Vertex::update()
+vector<Vertex*> Vertex::neighbors() const {
+    std::vector<Vertex*> neighborhood;
+
+    he->traverseVertex([&](Halfedge* he){ neighborhood.push_back(he->flip->v); });
+
+    return neighborhood;
+}
+
+void Vertex::update(Vertex* v) {
+    valid = false;
+
+    Halfedge *trav = he;
+    do {
+        trav->v = v;
+        trav = trav->flip->next;
+    } while(trav != he);
+}
 
 void Vertex::markEdges() {
     he->traverseVertex([] (Halfedge* he) { he->e->dirty = true; });
@@ -94,6 +114,11 @@ void Vertex::draw() const {
     glVertex3fv(&pos.x);
 }
 
+
+size_t Edge::collapse() {
+    valid = false;
+    return he->collapse();
+}
 
 v3f Edge::midpoint() const {
     return (he->v->pos + he->flip->v->pos) / 2.0f;
