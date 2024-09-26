@@ -5,12 +5,63 @@
 #include <algorithm> //
 #include <utility>   //
 #include <queue>     // priority_queue
-#include <fstream>   // fstream
+#include <fstream>   // ifstream
 #include <string>    // string, getline
 #include <cctype>    // isdigit
 #include <limits>    // numeric_limits::min, max
 
 using namespace std;
+
+
+/////////////////
+// QEF, Vertex //
+/////////////////
+Manifold::QuadraticErrorFunction::QuadraticErrorFunction(float n, const v3f& Sv, float vtv)
+  : n(n)
+  , Sv(Sv)
+  , vtv(vtv) {
+}
+
+Manifold::QuadraticErrorFunction::QuadraticErrorFunction(const Halfedge* he) : QuadraticErrorFunction() {
+    const Halfedge *trav = he;
+    do {
+        ++n;
+        Sv += trav->flip->v->pos;
+        vtv += trav->flip->v->pos.dot(trav->flip->v->pos);
+        trav = trav->flip->next;
+    } while (trav != he);
+}
+
+float Manifold::QuadraticErrorFunction::eval(const v3f& v) const {
+    return n * v.dot(v) - 2 * v.dot(Sv) + vtv;
+}
+
+Manifold::QuadraticErrorFunction Manifold::QuadraticErrorFunction::operator+(const QuadraticErrorFunction& qef) const {
+    return { n + qef.n, Sv + qef.Sv, vtv + qef.vtv };
+}
+
+Manifold::QuadraticErrorFunction& Manifold::QuadraticErrorFunction::operator=(const QuadraticErrorFunction& qef) {
+    n = qef.n;
+    Sv = qef.Sv;
+    vtv = qef.vtv;
+    return *this;
+}
+
+void Manifold::QEFVertex::calcQEF() {
+    qef = { he };
+}
+
+Manifold::QuadraticErrorFunction& Manifold::getQEF(Vertex *v) {
+    return static_cast<QEFVertex*>(v)->qef;
+}
+
+v3f Manifold::getNewPoint(const Edge *e) {
+    return (getQEF(e->he->v).Sv + getQEF(e->he->flip->v).Sv)/(getQEF(e->he->v).n + getQEF(e->he->flip->v).n);
+}
+
+float Manifold::getCombinedError(const Edge* e) {
+    return (getQEF(e->he->v) + getQEF(e->he->flip->v)).eval(getNewPoint(e));
+}
 
 
 ///////////////////////
@@ -50,8 +101,8 @@ void Manifold::AABB<T>::addPoint(const v3<T>& v) {
 // Manifold //
 //////////////
 // PRIVATE FUNCTIONS
-Edge* Manifold::getEdge(Vertex *v1, Vertex* v2) {
-    auto key = std::pair<Vertex*, Vertex*>(max(v1, v2), min(v1, v2));
+Edge* Manifold::getEdge(const Vertex *v1, const Vertex* v2) {
+    const auto key = std::pair<const Vertex*, const Vertex*>(max(v1, v2), min(v1, v2));
 
     if (auto result = edge_hash.find(key); result != edge_hash.end())
         return result->second;
@@ -64,8 +115,8 @@ Edge* Manifold::getEdge(Vertex *v1, Vertex* v2) {
 // very time expensive
 // this is the only code that prevents working with non-triangular meshes
 bool Manifold::checkSafety(const Edge *e) const {
-    auto v1nbrs(e->he->o->neighbors());
-    auto v2nbrs(e->he->flip->o->neighbors());
+    auto v1nbrs(e->he->v->neighbors());
+    auto v2nbrs(e->he->flip->v->neighbors());
     sort(v1nbrs.begin(), v1nbrs.end());
     sort(v2nbrs.begin(), v2nbrs.end());
     vector<Vertex*> intersect(v1nbrs.size() + v2nbrs.size());
@@ -78,12 +129,12 @@ bool Manifold::checkSafety(const Edge *e) const {
 }
 
 void Manifold::collapse(Edge *e) {
-    auto qef(e->he->o->qef + e->he->flip->o->qef);
-    e->he->o->pos = e->getNewPt();
+    auto qef(getQEF(e->he->v) + getQEF(e->he->flip->v));
+    e->he->v->pos = getNewPoint(e);
     deleted_faces += (unsigned long)e->collapse();
 
-    e->he->o->qef = qef;
-    e->he->o->markEdges();
+    getQEF(e->he->v) = qef;
+    e->he->v->markEdges();
 }
 
 int Manifold::verify() {
@@ -112,7 +163,7 @@ int Manifold::verify() {
     }
     for (auto &h : halfedges) {
         if (h.valid) {
-            if (!h.o->valid)
+            if (!h.v->valid)
                 rvalue |= 1<<4;
             if (!h.e->valid)
                 rvalue |= 1<<5;
@@ -133,11 +184,11 @@ int Manifold::verify() {
 }
 
 Vertex* Manifold::addPoint(v3f& p) {
-    vertices.push_back({ p, {}, nullptr, true });
+    vertices.push_back({ p, nullptr, true, {} });
     return &vertices.back();
 }
 
-void Manifold::addFace(const std::list<Vertex*>& verts) {
+void Manifold::addFace(const list<Vertex*>& verts) {
     faces.push_back({ nullptr, true });
 
     Halfedge *first = nullptr, *prev = nullptr;
@@ -149,7 +200,7 @@ void Manifold::addFace(const std::list<Vertex*>& verts) {
 
         Edge *e = getEdge(*it, *next);
 
-        halfedges.push_back({ nullptr, prev, e->he, &faces.back(), *it, e, true });
+        halfedges.push_back({ nullptr, prev, e->he, *it, e, &faces.back(), true });
         if (it != verts.begin())
             prev->next = &halfedges.back();
 
@@ -160,7 +211,7 @@ void Manifold::addFace(const std::list<Vertex*>& verts) {
         if (it == verts.begin())
             first = prev;
 
-        prev->o->he = prev;
+        prev->v->he = prev;
     }
 
     prev->next = first;
@@ -177,7 +228,7 @@ Manifold::Manifold(const char* objfile, bool invert) {
 
     while (!file.eof()) {
         file >> token;
-        // Ignore comments
+        // Discard comments
         if (token[0] == '#') {
             string dummy;
             getline(file, dummy);
@@ -216,7 +267,7 @@ Manifold::Manifold(const char* objfile, bool invert) {
 
     edge_hash.clear();
 
-    deleted_faces = 0;
+    deleted_faces = 0ul;
 
     for (auto &v : vertices)
         v.calcQEF();
@@ -238,7 +289,7 @@ void Manifold::simplify(const unsigned long count) {
     //construct PQ
     std::priority_queue<element, std::vector<element>, elementComp> errors;
     for (auto &e : edges) {
-        errors.push(&e);
+        errors.push({ &e, getCombinedError(&e) });
     }
 
     //do the algorithm
@@ -250,12 +301,12 @@ void Manifold::simplify(const unsigned long count) {
                     if (checkSafety(elem.e)) {
                         collapse(elem.e);
 
-                        auto v = elem.e->he->o;
+                        auto v = elem.e->he->v;
                         Halfedge *trav = v->he;
                         do {
                             if (trav->e->unsafe) {
                                 trav->e->unsafe = false;
-                                errors.push(trav->e);
+                                errors.push({ trav->e, getCombinedError(trav->e) });
                             }
                             trav = trav->flip->next;
                         } while(trav != v->he);
@@ -274,7 +325,7 @@ void Manifold::simplify(const unsigned long count) {
                 auto e = errors.top().e;
                 errors.pop();
                 e->dirty = false;
-                errors.push(e);
+                errors.push({ e, getCombinedError(e) });
             }
         }
         else { //no more safe edges!

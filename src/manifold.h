@@ -8,6 +8,31 @@
 
 class Manifold {
 private:
+    struct QuadraticErrorFunction {
+        float n;
+        v3f Sv;
+        float vtv;
+
+        QuadraticErrorFunction() = default;
+        QuadraticErrorFunction(float n, const v3f& Sv, float vtv);
+        QuadraticErrorFunction(const Halfedge* he);
+
+        float eval(const v3f& v) const;
+
+        QuadraticErrorFunction operator+(const QuadraticErrorFunction& qef) const;
+        QuadraticErrorFunction& operator=(const QuadraticErrorFunction& qef);
+    };
+
+    struct QEFVertex : public Vertex {
+        QuadraticErrorFunction qef;
+
+        void calcQEF();
+    };
+
+    static QuadraticErrorFunction& getQEF(Vertex* v);
+    static v3f getNewPoint(const Edge* e);
+    static float getCombinedError(const Edge* e);
+
     template <typename T>
     struct AABB {
         struct Dimension {
@@ -25,7 +50,7 @@ private:
         void addPoint(const v3<T>& v);
     };
 
-    Edge* getEdge(Vertex *v1, Vertex* v2);
+    Edge* getEdge(const Vertex *v1, const Vertex* v2);
     bool checkSafety(const Edge *e) const;
     void collapse(Edge *e);
 
@@ -45,12 +70,12 @@ public:
     void draw() const;
 
 private:
-    std::list<Vertex> vertices;
+    std::list<QEFVertex> vertices;
     std::list<Face> faces;
     std::list<Edge> edges;
     std::list<Halfedge> halfedges;
 
-    std::map<std::pair<Vertex*, Vertex*>, Edge*> edge_hash;
+    std::map<std::pair<const Vertex*, const Vertex*>, Edge*> edge_hash;
 
     AABB<float> bounds;
 

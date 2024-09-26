@@ -4,22 +4,22 @@
 
 
 struct element {
-    float value;
     Edge *e;
+    float error;
 
-    element(Edge *e): value(e->getCombinedError()), e(e) {}
-    element(const element& el): value(el.value), e(el.e) {}
+    element(Edge* e, float combinedError): e(e), error(combinedError) {}
+    element(const element& el) = default;
 
     bool dirty() const { return e->dirty; }
     bool valid() const { return e->valid; }
 
-    element* operator=(const element& el) { value = el.value; e = el.e; return this; }
+    element* operator=(const element& el) { error = el.error; e = el.e; return this; }
 };
 
 class elementComp {
 public:
     bool operator()(const element& e1, const element& e2) {
-        if (e1.value > e2.value)
+        if (e1.error > e2.error)
             return true;
         return false;
     }

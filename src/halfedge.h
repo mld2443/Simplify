@@ -8,54 +8,34 @@
 #include <list>
 
 
-struct QuadraticErrorFunction;
+//struct QuadraticErrorFunction;
 struct Vertex;
 struct Edge;
 struct Face;
 
 struct Halfedge {
     Halfedge *next, *prev, *flip;
-    Face *f;
-    Vertex *o;
+    Vertex *v;
     Edge *e;
+    Face *f;
     bool valid;
 
     unsigned int collapse();
 };
 
-struct QuadraticErrorFunction {
-    float n;
-    v3f Sv;
-    float vtv;
-
-    QuadraticErrorFunction() = default;
-    QuadraticErrorFunction(float n, const v3f& Sv, float vtv): n(n), Sv(Sv), vtv(vtv) {}
-    QuadraticErrorFunction(Halfedge* he);
-
-    float eval(const v3f& v) const { return n * v.dot(v) - 2 * v.dot(Sv) + vtv; }
-
-    QuadraticErrorFunction operator+(const QuadraticErrorFunction& q) const { return {n + q.n, Sv + q.Sv, vtv + q.vtv}; }
-    QuadraticErrorFunction* operator=(const QuadraticErrorFunction& q) { n = q.n; Sv = q.Sv; vtv = q.vtv; return this; }
-};
-
 struct Vertex {
     v3f pos;
-    QuadraticErrorFunction qef;
     Halfedge *he;
     bool valid;
-
-    ~Vertex() {}
-
-    void calcQEF() { qef = { he }; }
 
     std::vector<Vertex*> neighbors() const {
         std::vector<Vertex*> neighborhood;
 
         Halfedge *trav = he;
         do {
-            neighborhood.push_back(trav->flip->o);
+            neighborhood.push_back(trav->flip->v);
             trav = trav->flip->next;
-        } while(trav != he);
+        } while (trav != he);
 
         return neighborhood;
     }
@@ -65,32 +45,29 @@ struct Vertex {
 
         Halfedge *trav = he;
         do {
-            trav->o = v;
+            trav->v = v;
             trav = trav->flip->next;
         } while(trav != he);
     }
 
     void markEdges();
 
-    Vertex* operator=(const Vertex& v) { pos = v.pos; qef = v.qef; he = v.he; return this; }
+    Vertex* operator=(const Vertex& v) { pos = v.pos; he = v.he; return this; }
 };
 
 struct Edge {
     Halfedge *he;
     bool dirty, unsafe, valid;
 
-    v3f midpoint() const { return (he->o->pos + he->flip->o->pos)/2; }
-    v3f getNewPt() const { return (he->o->qef.Sv + he->flip->o->qef.Sv)/(he->o->qef.n + he->flip->o->qef.n); }
-    float getCombinedError() const { return (he->o->qef + he->flip->o->qef).eval(getNewPt()); }
-
-    unsigned int collapse() { valid = false; return he->collapse(); }
+    v3f midpoint() const { return (he->v->pos + he->flip->v->pos)/2; }
+    unsigned long collapse() { valid = false; return he->collapse(); }
 
     void draw() const {
         GLfloat white[] = { 1.0, 1.0, 1.0 };
         glMaterialfv(GL_FRONT, GL_AMBIENT, white);
         glBegin(GL_LINES); {
-            glVertex3d(he->o->pos.x, he->o->pos.y, he->o->pos.z);
-            glVertex3d(he->flip->o->pos.x, he->flip->o->pos.y, he->flip->o->pos.z);
+            glVertex3d(he->v->pos.x, he->v->pos.y, he->v->pos.z);
+            glVertex3d(he->flip->v->pos.x, he->flip->v->pos.y, he->flip->v->pos.z);
         } glEnd();
     }
 };
@@ -100,7 +77,7 @@ struct Face {
     bool valid;
 
     v3f normal() const {
-        return (he->next->next->o->pos - he->o->pos).cross(he->next->next->next->o->pos - he->next->o->pos).normalize();
+        return (he->next->next->v->pos - he->v->pos).cross(he->next->next->next->v->pos - he->next->v->pos).normalize();
     }
 
     v3f centroid() const {
@@ -110,7 +87,7 @@ struct Face {
         Halfedge *trav = he;
         do {
             ++val;
-            r += trav->o->pos;
+            r += trav->v->pos;
             trav = trav->next;
         } while(trav != he);
 
@@ -124,7 +101,7 @@ struct Face {
 
             Halfedge *trav = he;
             do {
-                glVertex3d(trav->o->pos.x, trav->o->pos.y, trav->o->pos.z);
+                glVertex3d(trav->v->pos.x, trav->v->pos.y, trav->v->pos.z);
                 trav = trav->next;
             } while(trav != he);
         } glEnd();

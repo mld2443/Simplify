@@ -1,26 +1,12 @@
 #include "halfedge.h"
 
 
-QuadraticErrorFunction::QuadraticErrorFunction(Halfedge* he) {
-    n = 0;
-    vtv = 0;
-    Sv = { 0, 0, 0 };
-
-    Halfedge *trav = he;
-    do {
-        ++n;
-        Sv += trav->flip->o->pos;
-        vtv += trav->flip->o->pos.dot(trav->flip->o->pos);
-        trav = trav->flip->next;
-    } while (trav != he);
-}
-
 unsigned int Halfedge::collapse() {
     unsigned int deleted_faces = 0;
 
     //update origin points
-    o->he = prev->flip;
-    flip->o->update(o);
+    v->he = prev->flip;
+    flip->v->update(v);
 
     //remove this halfedge
     valid = false;
@@ -44,7 +30,7 @@ unsigned int Halfedge::collapse() {
         next->flip->e = prev->e;
 
         //ensure the outside point points to valid halfedge
-        prev->o->he = next->flip;
+        prev->v->he = next->flip;
     }
     else {
         //update edges to skip this obselete halfedge
@@ -74,7 +60,7 @@ unsigned int Halfedge::collapse() {
         flip->prev->flip->e = flip->next->e;
 
         //ensure the flip's outside point points to valid halfedge
-        flip->prev->o->he = flip->next->flip;
+        flip->prev->v->he = flip->next->flip;
     }
     else {
         //update flip's edges to skip this obselete halfedge
