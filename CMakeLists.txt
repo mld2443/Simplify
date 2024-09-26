@@ -3,7 +3,7 @@ project(simplify)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
-set(SOURCE_FILES src/main.cpp src/halfedge.cpp)
+set(SOURCE_FILES src/main.cpp src/halfedge.cpp src/manifold.cpp)
 
 add_executable(${PROJECT_NAME} ${SOURCE_FILES})
 

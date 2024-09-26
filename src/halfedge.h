@@ -6,29 +6,12 @@
 //
 #pragma once
 
+#include "simd.h"
+
 #include <GL/glut.h>
 #include <vector>
 #include <cmath>
 #include <list>
-
-struct v3 {
-    float x,y,z;
-
-    v3 operator+(const v3& v) const { return {x + v.x, y + v.y, z + v.z}; }
-    v3 operator-(const v3& v) const { return {x - v.x, y - v.y, z - v.z}; }
-    v3 operator*(const float d) const { return {x * d, y * d, z * d}; }
-    v3 operator/(const float d) const { return {x / d, y / d, z / d}; }
-    v3* operator+=(const v3& v) { x += v.x; y += v.y; z += v.z; return this; }
-    v3* operator-=(const v3& v) { x -= v.x; y -= v.y; z -= v.z; return this; }
-    v3* operator*=(const float d) { x *= d; y *= d; z *= d; return this; }
-    v3* operator/=(const float d) { x /= d; y /= d; z /= d; return this; }
-    v3* operator=(const v3& v) { x = v.x; y = v.y; z = v.z; return this; }
-
-    float abs() const { return sqrt(x*x + y*y + z*z); }
-    float dot(const v3& v) const { return x*v.x + y*v.y + z*v.z; }
-    v3 cross(const v3& v) const { return {y*v.z - z*v.y, z*v.x - x*v.z, x*v.y - y*v.x}; }
-    v3 normalize() const { float mag = abs(); return {x/mag, y/mag, z/mag}; }
-};
 
 struct vertex;
 struct edge;
@@ -44,29 +27,30 @@ struct halfedge {
     unsigned int collapse();
 };
 
-struct qef {
+struct QuadraticErrorFunction {
     float n;
-    v3 Sv;
+    v3f Sv;
     float vtv;
 
-    qef(const float _n=0, const v3& _Sv={}, const float _vtv=0): n(_n), Sv(_Sv), vtv(_vtv) {}
-    qef(halfedge* he);
+    QuadraticErrorFunction() = default;
+    QuadraticErrorFunction(float n, const v3f& Sv, float vtv): n(n), Sv(Sv), vtv(vtv) {}
+    QuadraticErrorFunction(halfedge* he);
 
-    float eval(const v3& v) const { return n * v.dot(v) - 2 * v.dot(Sv) + vtv; }
+    float eval(const v3f& v) const { return n * v.dot(v) - 2 * v.dot(Sv) + vtv; }
 
-    qef operator+(const qef& q) const { return {n + q.n, Sv + q.Sv, vtv + q.vtv}; }
-    qef* operator=(const qef& q) { n = q.n; Sv = q.Sv; vtv = q.vtv; return this; }
+    QuadraticErrorFunction operator+(const QuadraticErrorFunction& q) const { return {n + q.n, Sv + q.Sv, vtv + q.vtv}; }
+    QuadraticErrorFunction* operator=(const QuadraticErrorFunction& q) { n = q.n; Sv = q.Sv; vtv = q.vtv; return this; }
 };
 
 struct vertex {
-    v3 pos;
-    qef q;
+    v3f pos;
+    QuadraticErrorFunction qef;
     halfedge *he;
     bool valid;
 
     ~vertex() {}
 
-    void calcQEF() { q = qef(he); }
+    void calcQEF() { qef = { he }; }
 
     std::vector<vertex*> neighbors() const {
         std::vector<vertex*> neighborhood;
@@ -92,16 +76,16 @@ struct vertex {
 
     void markEdges();
 
-    vertex* operator=(const vertex& v) { pos = v.pos; q = v.q; he = v.he; return this; }
+    vertex* operator=(const vertex& v) { pos = v.pos; qef = v.qef; he = v.he; return this; }
 };
 
 struct edge {
     halfedge *he;
     bool dirty, unsafe, valid;
 
-    v3 midpoint() const { return (he->o->pos + he->flip->o->pos)/2; }
-    v3 getNewPt() const { return (he->o->q.Sv + he->flip->o->q.Sv)/(he->o->q.n + he->flip->o->q.n); }
-    float getCombinedError() const { return (he->o->q + he->flip->o->q).eval(getNewPt()); }
+    v3f midpoint() const { return (he->o->pos + he->flip->o->pos)/2; }
+    v3f getNewPt() const { return (he->o->qef.Sv + he->flip->o->qef.Sv)/(he->o->qef.n + he->flip->o->qef.n); }
+    float getCombinedError() const { return (he->o->qef + he->flip->o->qef).eval(getNewPt()); }
 
     unsigned int collapse() { valid = false; return he->collapse(); }
 
@@ -119,13 +103,13 @@ struct face {
     halfedge *he;
     bool valid;
 
-    v3 normal() const {
+    v3f normal() const {
         return (he->next->next->o->pos - he->o->pos).cross(he->next->next->next->o->pos - he->next->o->pos).normalize();
     }
 
-    v3 centroid() const {
+    v3f centroid() const {
         unsigned int val = 0;
-        v3 r = {0,0,0};
+        v3f r = {0,0,0};
 
         halfedge *trav = he;
         do {
@@ -139,7 +123,7 @@ struct face {
 
     void draw() const {
         glBegin(GL_POLYGON); {
-            v3 n = normal();
+            v3f n = normal();
             glNormal3d(n.x, n.y, n.z);
 
             halfedge *trav = he;
