@@ -9,25 +9,30 @@
 
 using namespace std;
 
-edge* manifold::get_edge(vertex *v1, vertex* v2) {
-    auto key = std::pair<vertex*, vertex*>(max(v1, v2), min(v1, v2));
+//////////////
+// Manifold //
+//////////////
+// PRIVATE FUNCTIONS
+
+Edge* Manifold::get_edge(Vertex *v1, Vertex* v2) {
+    auto key = std::pair<Vertex*, Vertex*>(max(v1, v2), min(v1, v2));
 
     if (auto result = edge_hash.find(key); result != edge_hash.end())
         return result->second;
 
-    edges.push_back({nullptr, false, false, true});
+    edges.push_back({ nullptr, false, false, true });
 
     return edge_hash[key] = &edges.back();
 }
 
 // very time expensive
 // this is the only code that prevents working with non-triangular meshes
-bool manifold::checkSafety(const edge *e) const {
+bool Manifold::checkSafety(const Edge *e) const {
     auto v1nbrs(e->he->o->neighbors());
     auto v2nbrs(e->he->flip->o->neighbors());
     std::sort(v1nbrs.begin(), v1nbrs.end());
     std::sort(v2nbrs.begin(), v2nbrs.end());
-    std::vector<vertex*> intersect(v1nbrs.size() + v2nbrs.size());
+    std::vector<Vertex*> intersect(v1nbrs.size() + v2nbrs.size());
     auto it = std::set_intersection(v1nbrs.begin(), v1nbrs.end(), v2nbrs.begin(), v2nbrs.end(), intersect.begin());
 
     if(it-intersect.begin() == 2)
@@ -36,7 +41,7 @@ bool manifold::checkSafety(const edge *e) const {
     return false;
 }
 
-void manifold::collapse(edge *e) {
+void Manifold::collapse(Edge *e) {
     auto qef(e->he->o->qef + e->he->flip->o->qef);
     e->he->o->pos = e->getNewPt();
     deleted_faces += (unsigned long)e->collapse();
@@ -45,7 +50,7 @@ void manifold::collapse(edge *e) {
     e->he->o->markEdges();
 }
 
-int manifold::verify() {
+int Manifold::verify() {
     vertices.remove_if(invalid());
     faces.remove_if(invalid());
     edges.remove_if(invalid());
@@ -91,24 +96,27 @@ int manifold::verify() {
     return rvalue;
 }
 
-vertex* manifold::add_vert(const float x, const float y, const float z) {
-    vertices.push_back({{x,y,z},{},nullptr, true});
+
+// PUBLIC FUNCTIONS
+
+Vertex* Manifold::add_vert(const float x, const float y, const float z) {
+    vertices.push_back({ { x,y,z }, {}, nullptr, true });
     return &vertices.back();
 }
 
-void manifold::add_face(const std::list<vertex*>& verts) {
-    faces.push_back({nullptr, true});
+void Manifold::add_face(const std::list<Vertex*>& verts) {
+    faces.push_back({ nullptr, true });
 
-    halfedge *first = nullptr, *prev = nullptr;
+    Halfedge *first = nullptr, *prev = nullptr;
 
     for (auto it = verts.begin(); it != verts.end(); ++it) {
         auto next = it;
         if (++next == verts.end())
             next = verts.begin();
 
-        edge *e = get_edge(*it, *next);
+        Edge *e = get_edge(*it, *next);
 
-        halfedges.push_back({nullptr,prev,e->he,&faces.back(),*it,e, true});
+        halfedges.push_back({ nullptr, prev, e->he, &faces.back(), *it, e, true });
         if (it != verts.begin())
             prev->next = &halfedges.back();
 
@@ -126,7 +134,7 @@ void manifold::add_face(const std::list<vertex*>& verts) {
     first->prev = faces.back().he = &halfedges.back();
 }
 
-void manifold::clear() {
+void Manifold::clear() {
     vertices.clear();
     faces.clear();
     edges.clear();
@@ -137,7 +145,7 @@ void manifold::clear() {
     deleted_faces = 0;
 }
 
-void manifold::cleanup() {
+void Manifold::cleanup() {
     edge_hash.clear();
 
     deleted_faces = 0;
@@ -150,7 +158,7 @@ void manifold::cleanup() {
         std::cout << "ERROR, CODE " << std::oct << result << std::endl;
 }
 
-void manifold::simplify(const unsigned long count) {
+void Manifold::simplify(const unsigned long count) {
     //construct PQ
     std::priority_queue<element, std::vector<element>, elementComp> errors;
     for (auto &e : edges) {
@@ -167,7 +175,7 @@ void manifold::simplify(const unsigned long count) {
                         collapse(elem.e);
 
                         auto v = elem.e->he->o;
-                        halfedge *trav = v->he;
+                        Halfedge *trav = v->he;
                         do {
                             if (trav->e->unsafe) {
                                 trav->e->unsafe = false;
@@ -203,7 +211,7 @@ void manifold::simplify(const unsigned long count) {
         std::cout << "ERROR, CODE " << std::oct << result << std::endl;
 }
 
-void manifold::draw(const bool drawcontrol) const {
+void Manifold::draw() const {
     for (auto &f : faces)
         f.draw();
 }

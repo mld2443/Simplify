@@ -1,9 +1,3 @@
-//
-//  fileio.h
-//  Simplify
-//
-//  Created by Matthew Dillard on 11/8/15.
-//
 #pragma once
 
 #include <iostream>
@@ -14,23 +8,42 @@
 #include <vector>
 #include <map>
 
-float xlow, ylow, zlow, xhigh, yhigh, zhigh;
 
-manifold m;
+template <typename T>
+struct Bounds {
+    struct Dimension {
+        T lo = FLT_MAX, hi = FLT_MIN;
 
-void load(const char *filename, const bool invert = false) {
+        void addSample(T s) {
+            if (s < lo) lo = s;
+            if (s > hi) hi = s;
+        }
+
+        T delta() const { return hi - lo; }
+    };
+
+    Dimension x, y, z;
+
+    void addPoint(T _x, T _y, T _z) {
+        x.addSample(_x);
+        y.addSample(_y);
+        z.addSample(_z);
+    }
+};
+
+Bounds<float> bounds;
+Manifold m;
+
+void loadOBJ(const char *filename, const bool invert = false) {
     m.clear();
 
-    std::vector<vertex*> v_pointers;
-    xlow = ylow = zlow = FLT_MAX;
-    xhigh = yhigh = zhigh = -FLT_MAX;
-
+    std::vector<Vertex*> v_pointers;
     std::ifstream file(filename);
     std::string token;
 
     while (!file.eof()) {
         file >> token;
-        if(token[0] == '#'){
+        if (token[0] == '#') {
             std::string dummy;
             getline(file, dummy);
         }
@@ -38,25 +51,12 @@ void load(const char *filename, const bool invert = false) {
             float x, y, z;
             file >> x >> y >> z;
 
-            {
-                if (x < xlow)
-                    xlow = x;
-                else if (x > xhigh)
-                    xhigh = x;
-                if (y < ylow)
-                    ylow = y;
-                else if (y > yhigh)
-                    yhigh = y;
-                if (z < zlow)
-                    zlow = z;
-                else if (z > zhigh)
-                    zhigh = z;
-            }
+            bounds.addPoint(x, y, z);
 
             v_pointers.push_back(m.add_vert(x, y, z));
         }
         else if (token[0] == 'f') {
-            std::list<vertex*> face_verts;
+            std::list<Vertex*> face_verts;
             file >> std::ws;
             while (std::isdigit(file.peek())) {
                 std::string vnum;

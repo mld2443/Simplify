@@ -1,29 +1,25 @@
-//
-//  main.cpp
-//  Simplify
-//
-//  Created by Matthew Dillard on 11/17/15.
-//
-
 #include <GL/glut.h>
 #include <cstdlib>
 
 #include "manifold.h"
 #include "fileio.h"
 
+
 int WINDOW_WIDTH = 1440, WINDOW_HEIGHT = 900;
 int window = 0;
-bool drawcontrol = false;
 bool executed = false;
 unsigned int target;
-char* file;
+const char* file;
 
 // mouse state
 int prevX = 0, prevY = 0;
 bool leftPressed = false, rightPressed = false, middlePressed = false;
 
 // view state
-float rotMat[] = {1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
+float rotMat[] = {1,0,0,0,
+                  0,1,0,0,
+                  0,0,1,0,
+                  0,0,0,1};
 float focus[] = {0,0,0};
 
 void display() {
@@ -40,7 +36,7 @@ void display() {
     glTranslatef(focus[0], focus[1], focus[2]);
     glMultMatrixf(rotMat);
 
-    m.draw(drawcontrol);
+    m.draw();
 
     glFlush();
     glutSwapBuffers();
@@ -109,8 +105,6 @@ void keyboard(unsigned char key, int x, int y) {
     switch(key)
     {
         case 9: //tab
-            drawcontrol = !drawcontrol;
-            glutPostRedisplay();
             break;
 
         case 13: //return
@@ -126,7 +120,7 @@ void keyboard(unsigned char key, int x, int y) {
             if (!executed)
                 m.simplify(target);
             else
-                load(file);
+                loadOBJ(file);
             executed = !executed;
             glutPostRedisplay();
             break;
@@ -168,44 +162,40 @@ void specialkey(int key, int x, int y) {
     }
 }
 
-void init(char *filename, const unsigned int t) {
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-    glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
-
-    glClearColor(0, 0, 0, 1);
-    glEnable(GL_DEPTH_TEST);
-    glEnable(GL_LIGHT0);
-    glEnable(GL_LIGHTING);
-
-    glEnable(GL_CULL_FACE);
-
-    load(filename);
-    file = filename;
-    target = t;
-
-    float dx = xhigh-xlow, dy = yhigh - ylow, dz = zhigh - zlow;
-
-    if (dx >= dy && dx >= dz) {
-        focus[2] -= (4*dx)/5;
-    }
-    else if (dy >= dz) {
-        focus[2] -= (4*dy)/5;
-    }
-    else {
-        focus[2] -= (4*dz)/5;
-    }
-}
-
 int main(int argc, char **argv) {
+    file = "...";
+    loadOBJ(file);
+    target = 2000;
+
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA | GLUT_DEPTH);
     glutInitWindowPosition(0, 0);
     glutInitWindowSize(WINDOW_WIDTH, WINDOW_HEIGHT);
-    window = glutCreateWindow("CSCE 645 - Matthew Dillard");
-    //glutFullScreen();
+    window = glutCreateWindow("Manifold Surface Simplifier");
 
-    init(argv[1], atoi(argv[2]));
+    {
+        glMatrixMode(GL_PROJECTION);
+        glLoadIdentity();
+        glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
+
+        glClearColor(0, 0, 0, 1);
+        glEnable(GL_DEPTH_TEST);
+        glEnable(GL_LIGHT0);
+        glEnable(GL_LIGHTING);
+        glEnable(GL_CULL_FACE);
+
+        const float dx = bounds.x.delta(), dy = bounds.y.delta(), dz = bounds.z.delta();
+
+        if (dx >= dy && dx >= dz) {
+            focus[2] -= (4*dx)/5;
+        }
+        else if (dy >= dz) {
+            focus[2] -= (4*dy)/5;
+        }
+        else {
+            focus[2] -= (4*dz)/5;
+        }
+    }
 
     glutDisplayFunc(display);
     glutReshapeFunc(reshape);

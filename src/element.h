@@ -1,18 +1,13 @@
-//
-//  element.h
-//  Simplify
-//
-//  Created by Matthew Dillard on 11/30/15.
-//
 #pragma once
 
 #include "halfedge.h"
 
+
 struct element {
     float value;
-    edge *e;
+    Edge *e;
 
-    element(edge *_e): value(_e->getCombinedError()), e(_e) {}
+    element(Edge *e): value(e->getCombinedError()), e(e) {}
     element(const element& el): value(el.value), e(el.e) {}
 
     bool dirty() const { return e->dirty; }

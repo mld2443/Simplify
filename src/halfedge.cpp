@@ -1,27 +1,21 @@
-//
-//  halfedge.cpp
-//  Simplify
-//
-//  Created by Matthew Dillard on 11/28/15.
-//
-
 #include "halfedge.h"
 
-QuadraticErrorFunction::QuadraticErrorFunction(halfedge* he) {
+
+QuadraticErrorFunction::QuadraticErrorFunction(Halfedge* he) {
     n = 0;
     vtv = 0;
-    Sv = {0,0,0};
+    Sv = { 0, 0, 0 };
 
-    halfedge *trav = he;
+    Halfedge *trav = he;
     do {
         ++n;
         Sv += trav->flip->o->pos;
         vtv += trav->flip->o->pos.dot(trav->flip->o->pos);
         trav = trav->flip->next;
-    } while(trav != he);
+    } while (trav != he);
 }
 
-unsigned int halfedge::collapse() {
+unsigned int Halfedge::collapse() {
     unsigned int deleted_faces = 0;
 
     //update origin points
@@ -91,8 +85,8 @@ unsigned int halfedge::collapse() {
     return deleted_faces;
 }
 
-void vertex::markEdges() {
-    halfedge *trav = he;
+void Vertex::markEdges() {
+    Halfedge *trav = he;
     do {
         trav->e->dirty = true;
         trav = trav->flip->next;
