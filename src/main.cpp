@@ -1,13 +1,16 @@
+#include "collapsible.h"
+
 #include <GL/glut.h>
 #include <cstdlib>
-
-#include "manifold.h"
+#ifndef NDEBUG
+#include <iostream>
+#endif
 
 
 int WINDOW_WIDTH = 1440, WINDOW_HEIGHT = 900;
 int window = 0;
 bool executed = false;
-unsigned int target;
+unsigned target;
 const char* file;
 Manifold *shape;
 
@@ -16,13 +19,13 @@ int prevX = 0, prevY = 0;
 bool leftPressed = false, rightPressed = false, middlePressed = false;
 
 // view state
-float rotMat[16] = { 1, 0, 0, 0,
-                     0, 1, 0, 0,
-                     0, 0, 1, 0,
-                     0, 0, 0, 1 };
+float modelView[16] = { 1, 0, 0, 0,
+                        0, 1, 0, 0,
+                        0, 0, 1, 0,
+                        0, 0, 0, 1 };
 float focus[3] = { 0, 0, 0 };
 
-void display() {
+static void display() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     // Set up viewing matrices
@@ -34,7 +37,7 @@ void display() {
 
     //Camera
     glTranslatef(focus[0], focus[1], focus[2]);
-    glMultMatrixf(rotMat);
+    glMultMatrixf(modelView);
 
     shape->draw();
 
@@ -42,13 +45,13 @@ void display() {
     glutSwapBuffers();
 }
 
-void reshape(int width, int height) {
+static void reshape(int width, int height) {
     glViewport(0, 0, width, height);
     WINDOW_WIDTH = width;
     WINDOW_HEIGHT = height;
 }
 
-void mouse(int button, int state, int x, int y) {
+static void mouse(int button, int state, int x, int y) {
     y = WINDOW_HEIGHT - y;
 
     // Mouse state that should always be stored on pressing
@@ -68,7 +71,7 @@ void mouse(int button, int state, int x, int y) {
     }
 }
 
-void motion(int x, int y) {
+static void motion(int x, int y) {
     y = WINDOW_HEIGHT - y;
 
     float dx = (x - prevX);
@@ -81,8 +84,8 @@ void motion(int x, int y) {
         glLoadIdentity();
         glRotatef(dx, 0, 1, 0);
         glRotatef(dy, -1, 0, 0);
-        glMultMatrixf(rotMat);
-        glGetFloatv(GL_MODELVIEW_MATRIX, rotMat);
+        glMultMatrixf(modelView);
+        glGetFloatv(GL_MODELVIEW_MATRIX, modelView);
     }
     else if (middlePressed)
     {
@@ -101,7 +104,18 @@ void motion(int x, int y) {
     glutPostRedisplay();
 }
 
-void keyboard(unsigned char key, int x, int y) {
+static void resetViewMatrix() {
+    for (int i = 0; i < 16; ++i) {
+        modelView[i] = i % 5 ? 0.0f : 1.0f;
+    }
+
+    const auto offset = -shape->getAABBCentroid();
+    modelView[12] = offset.x;
+    modelView[13] = offset.y;
+    modelView[14] = offset.z;
+}
+
+static void keyboard(unsigned char key, int x, int y) {
     switch(key)
     {
         case 9: //tab
@@ -110,21 +124,23 @@ void keyboard(unsigned char key, int x, int y) {
         case 13: //return
             break;
 
-        case 8: //delete
+        case 8: //backspace
+            resetViewMatrix();
+            glutPostRedisplay();
             break;
 
-        case 127: //backspace
+        case 127: //delete
             break;
 
         case ' ':
-            if (!executed)
-                shape->simplify(target);
-            else {
-                delete shape;
-                shape = new Manifold(file);
-            }
-            executed = !executed;
-            glutPostRedisplay();
+            // if (!executed)
+            //     shape->simplify(target);
+            // else {
+            //     delete shape;
+            //     shape = new Manifold(file);
+            // }
+            // executed = !executed;
+            // glutPostRedisplay();
             break;
 
         case 27: //escape
@@ -133,11 +149,14 @@ void keyboard(unsigned char key, int x, int y) {
             break;
 
         default:
+#ifndef NDEBUG
+            std::cout << "Unknown key code #" << key << std::endl;
+#endif
             break;
     }
 }
 
-void specialkey(int key, int x, int y) {
+static void specialkey(int key, int x, int y) {
     switch (key) {
         case GLUT_KEY_UP:
             focus[1] -= 0.05;
@@ -160,42 +179,50 @@ void specialkey(int key, int x, int y) {
             break;
 
         default:
+#ifndef NDEBUG
+            std::cout << "Unknown key code #" << key << std::endl;
+#endif
             break;
     }
 }
 
 int main(int argc, char **argv) {
+    // Load the model
     file = "...";
     shape = new Manifold(file);
     target = 2000u;
 
+    // Prepare the window
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA | GLUT_DEPTH);
     glutInitWindowPosition(0, 0);
     glutInitWindowSize(WINDOW_WIDTH, WINDOW_HEIGHT);
     window = glutCreateWindow("Manifold Surface Simplifier");
 
-    {
-        glMatrixMode(GL_PROJECTION);
-        glLoadIdentity();
-        glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
+    // Set up our openGL specific parameters
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
 
-        glClearColor(0, 0, 0, 1);
-        glEnable(GL_DEPTH_TEST);
-        glEnable(GL_LIGHT0);
-        glEnable(GL_LIGHTING);
-        glEnable(GL_CULL_FACE);
+    glClearColor(0, 0, 0, 1);
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_LIGHT0);
+    glEnable(GL_LIGHTING);
+    glEnable(GL_CULL_FACE);
 
-        const v3f deltas = shape->getAABBSizes();
+    // Center the model in viewspace and zoom in/out so it takes up most of the screen
+    resetViewMatrix();
 
-        if (deltas.x >= deltas.y && deltas.x >= deltas.z)
-            focus[2] -= (4*deltas.x)/5;
-        else if (deltas.y >= deltas.z)
-            focus[2] -= (4*deltas.y)/5;
-        else
-            focus[2] -= (4*deltas.z)/5;
-    }
+    const v3f deltas = shape->getAABBSizes();
 
+    if (deltas.x >= deltas.y && deltas.x >= deltas.z)
+        focus[2] -= (4.0f * deltas.x) / 5.0f;
+    else if (deltas.y >= deltas.z)
+        focus[2] -= (4.0f * deltas.y) / 5.0f;
+    else
+        focus[2] -= (4.0f * deltas.z) / 5.0f;
+
+    // Initialize the glut callbacks
     glutDisplayFunc(display);
     glutReshapeFunc(reshape);
     glutKeyboardFunc(keyboard);
@@ -203,6 +230,6 @@ int main(int argc, char **argv) {
     glutMouseFunc(mouse);
     glutMotionFunc(motion);
 
-    // main loop
+    // Kick off the main loop
     glutMainLoop();
 }
