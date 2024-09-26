@@ -5,6 +5,7 @@
 #include <list>
 
 
+template <class VertexType = Vertex>
 class Manifold {
 private:
     struct AABB {
@@ -25,12 +26,13 @@ private:
 
     bool checkSafety(const Edge *e) const;
 
+    Vertex* addPoint(v3f& p);
+    void addFace(const std::list<Vertex*>& verts);
+
+protected:
 #ifndef NDEBUG
     void verify();
 #endif
-
-    Vertex* addPoint(v3f& p);
-    void addFace(const std::list<Vertex*>& verts);
 
 public:
     Manifold(const char* objfile, bool invert = false);
@@ -38,13 +40,16 @@ public:
     v3f getAABBSizes() const;
     v3f getAABBCentroid() const;
 
-    void draw() const;
+    void drawFaces() const;
+    void drawEdges() const;
+    void drawVertices() const;
+
+protected:
+    std::list<VertexType> m_vertices;
+    std::list<Face>          m_faces;
+    std::list<Edge>          m_edges;
+    std::list<Halfedge>  m_halfedges;
 
 private:
-    std::list<Vertex>    m_vertices;
-    std::list<Face>         m_faces;
-    std::list<Edge>         m_edges;
-    std::list<Halfedge> m_halfedges;
-
     AABB m_bounds;
 };

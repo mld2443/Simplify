@@ -1,8 +1,8 @@
 #include "halfedge.h"
 
 
-unsigned int Halfedge::collapse() {
-    unsigned int deleted_faces = 0;
+size_t Halfedge::collapse() {
+    size_t deleted_faces = 0ul;
 
     //update origin points
     v->he = prev->flip;
@@ -71,10 +71,56 @@ unsigned int Halfedge::collapse() {
     return deleted_faces;
 }
 
+void Halfedge::traverseVertex(std::function<void(Halfedge*)> op) {
+    Halfedge *it = this;
+    do op(it);
+    while ((it = it->flip->next) != this);
+}
+
+void Halfedge::traverseFace(std::function<void(Halfedge*)> op) {
+    Halfedge *it = this;
+    do op(it);
+    while ((it = it->next) != this);
+}
+
+
+//void Vertex::update()
+
 void Vertex::markEdges() {
-    Halfedge *trav = he;
-    do {
-        trav->e->dirty = true;
-        trav = trav->flip->next;
-    } while(trav != he);
+    he->traverseVertex([] (Halfedge* he) { he->e->dirty = true; });
+}
+
+void Vertex::draw() const {
+    glVertex3fv(&pos.x);
+}
+
+
+v3f Edge::midpoint() const {
+    return (he->v->pos + he->flip->v->pos) / 2.0f;
+}
+
+void Edge::draw() const {
+    he->v->draw();
+    he->flip->v->draw();
+}
+
+
+v3f Face::normal() const {
+    return (he->next->next->v->pos - he->v->pos).cross(he->next->next->next->v->pos - he->next->v->pos).normalize();
+}
+
+v3f Face::centroid() const {
+    size_t count = 0ul;
+    v3f sum;
+
+    he->traverseFace([&](Halfedge* he){ sum += he->v->pos; ++count; });
+
+    return sum / count;
+}
+
+void Face::draw() const {
+    v3f n = normal();
+    glNormal3fv(&n.x);
+
+    he->traverseFace([](Halfedge* he){ he->v->draw(); });
 }

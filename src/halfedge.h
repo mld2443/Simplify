@@ -6,9 +6,9 @@
 #include <vector>
 #include <cmath>
 #include <list>
+#include <functional>
 
 
-//struct QuadraticErrorFunction;
 struct Vertex;
 struct Edge;
 struct Face;
@@ -20,7 +20,10 @@ struct Halfedge {
     Face *f;
     bool valid;
 
-    unsigned int collapse();
+    size_t collapse();
+
+    void traverseVertex(std::function<void(Halfedge*)> op);
+    void traverseFace(std::function<void(Halfedge*)> op);
 };
 
 struct Vertex {
@@ -52,6 +55,8 @@ struct Vertex {
 
     void markEdges();
 
+    void draw() const;
+
     Vertex* operator=(const Vertex& v) { pos = v.pos; he = v.he; return this; }
 };
 
@@ -59,53 +64,21 @@ struct Edge {
     Halfedge *he;
     bool dirty, unsafe, valid;
 
-    v3f midpoint() const { return (he->v->pos + he->flip->v->pos)/2; }
-    unsigned long collapse() { valid = false; return he->collapse(); }
+    size_t collapse() { valid = false; return he->collapse(); }
 
-    void draw() const {
-        GLfloat white[] = { 1.0, 1.0, 1.0 };
-        glMaterialfv(GL_FRONT, GL_AMBIENT, white);
-        glBegin(GL_LINES); {
-            glVertex3d(he->v->pos.x, he->v->pos.y, he->v->pos.z);
-            glVertex3d(he->flip->v->pos.x, he->flip->v->pos.y, he->flip->v->pos.z);
-        } glEnd();
-    }
+    v3f midpoint() const;
+
+    void draw() const;
 };
 
 struct Face {
     Halfedge *he;
     bool valid;
 
-    v3f normal() const {
-        return (he->next->next->v->pos - he->v->pos).cross(he->next->next->next->v->pos - he->next->v->pos).normalize();
-    }
+    v3f normal() const;
+    v3f centroid() const;
 
-    v3f centroid() const {
-        unsigned int val = 0;
-        v3f r = {0,0,0};
-
-        Halfedge *trav = he;
-        do {
-            ++val;
-            r += trav->v->pos;
-            trav = trav->next;
-        } while(trav != he);
-
-        return r / val;
-    }
-
-    void draw() const {
-        glBegin(GL_POLYGON); {
-            v3f n = normal();
-            glNormal3d(n.x, n.y, n.z);
-
-            Halfedge *trav = he;
-            do {
-                glVertex3d(trav->v->pos.x, trav->v->pos.y, trav->v->pos.z);
-                trav = trav->next;
-            } while(trav != he);
-        } glEnd();
-    }
+    void draw() const;
 };
 
 struct invalid {

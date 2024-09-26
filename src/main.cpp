@@ -1,18 +1,19 @@
 #include "collapsible.h"
 
-#include <GL/glut.h>
-#include <cstdlib>
+#include <GL/freeglut.h> // glut*, gluPerspective, gl*
+#include <cstdlib>   // atoi
 #ifndef NDEBUG
-#include <iostream>
+#include <iostream>  // cout, endl
 #endif
 
 
 int WINDOW_WIDTH = 1440, WINDOW_HEIGHT = 900;
 int window = 0;
-bool executed = false;
+bool simplified = false;
 unsigned target;
 const char* file;
-Manifold *shape;
+Manifold<> *shape;
+bool showFaces = true, showEdges = false, showVertices = false;
 
 // mouse state
 int prevX = 0, prevY = 0;
@@ -39,7 +40,12 @@ static void display() {
     glTranslatef(focus[0], focus[1], focus[2]);
     glMultMatrixf(modelView);
 
-    shape->draw();
+    if (showVertices)
+        shape->drawVertices();
+    if (showEdges)
+        shape->drawEdges();
+    if (showFaces)
+        shape->drawFaces();
 
     glFlush();
     glutSwapBuffers();
@@ -113,83 +119,109 @@ static void resetViewMatrix() {
     modelView[12] = offset.x;
     modelView[13] = offset.y;
     modelView[14] = offset.z;
+    focus[0] = focus[1] = 0.0f;
+    focus[2] = -shape->getAABBSizes().max();
 }
 
 static void keyboard(unsigned char key, int x, int y) {
     switch(key)
     {
-        case 9: //tab
-            break;
+    case ' ':
+        // if (!executed)
+        //     shape->simplify(target);
+        // else {
+        //     delete shape;
+        //     shape = new Manifold<>(file);
+        // }
+        // executed = !executed;
+        // glutPostRedisplay();
+        break;
 
-        case 13: //return
-            break;
+    case 'p':
+        showVertices = !showVertices;
+        glutPostRedisplay();
+        break;
+    case 'e':
+        showEdges = !showEdges;
+        glutPostRedisplay();
+        break;
+    case 'f':
+        showFaces = !showFaces;
+        glutPostRedisplay();
+        break;
 
-        case 8: //backspace
-            resetViewMatrix();
-            glutPostRedisplay();
-            break;
+    case 9: //tab
+        break;
 
-        case 127: //delete
-            break;
+    case 13: //return
+        break;
 
-        case ' ':
-            // if (!executed)
-            //     shape->simplify(target);
-            // else {
-            //     delete shape;
-            //     shape = new Manifold(file);
-            // }
-            // executed = !executed;
-            // glutPostRedisplay();
-            break;
+    case 8: //backspace
+        resetViewMatrix();
+        glutPostRedisplay();
+        break;
 
-        case 27: //escape
-            glutDestroyWindow(window);
-            exit(0);
-            break;
+    case 127: //delete
+        break;
 
-        default:
+    case 114: //leftctrl
+        break;
+
+    case 115: //rightctrl
+        break;
+
+    case 116: //leftalt
+        break;
+
+    case 117: //rightalt
+        break;
+
+    case 27: //escape
+        glutLeaveMainLoop();
+        break;
+
+    default:
 #ifndef NDEBUG
-            std::cout << "Unknown key code #" << key << std::endl;
+        std::cout << "Unknown key code #" << key << std::endl;
 #endif
-            break;
+        break;
     }
 }
 
 static void specialkey(int key, int x, int y) {
     switch (key) {
-        case GLUT_KEY_UP:
-            focus[1] -= 0.05;
-            glutPostRedisplay();
-            break;
+    case GLUT_KEY_UP:
+        focus[1] -= 0.05;
+        glutPostRedisplay();
+        break;
 
-        case GLUT_KEY_DOWN:
-            focus[1] += 0.05;
-            glutPostRedisplay();
-            break;
+    case GLUT_KEY_DOWN:
+        focus[1] += 0.05;
+        glutPostRedisplay();
+        break;
 
-        case GLUT_KEY_LEFT:
-            focus[0] += 0.05;
-            glutPostRedisplay();
-            break;
+    case GLUT_KEY_LEFT:
+        focus[0] += 0.05;
+        glutPostRedisplay();
+        break;
 
-        case GLUT_KEY_RIGHT:
-            focus[0] -= 0.05;
-            glutPostRedisplay();
-            break;
+    case GLUT_KEY_RIGHT:
+        focus[0] -= 0.05;
+        glutPostRedisplay();
+        break;
 
-        default:
+    default:
 #ifndef NDEBUG
-            std::cout << "Unknown key code #" << key << std::endl;
+        std::cout << "Unknown key code #" << key << std::endl;
 #endif
-            break;
+        break;
     }
 }
 
 int main(int argc, char **argv) {
     // Load the model
     file = "...";
-    shape = new Manifold(file);
+    shape = new Manifold<>(file);
     target = 2000u;
 
     // Prepare the window
@@ -213,15 +245,6 @@ int main(int argc, char **argv) {
     // Center the model in viewspace and zoom in/out so it takes up most of the screen
     resetViewMatrix();
 
-    const v3f deltas = shape->getAABBSizes();
-
-    if (deltas.x >= deltas.y && deltas.x >= deltas.z)
-        focus[2] -= (4.0f * deltas.x) / 5.0f;
-    else if (deltas.y >= deltas.z)
-        focus[2] -= (4.0f * deltas.y) / 5.0f;
-    else
-        focus[2] -= (4.0f * deltas.z) / 5.0f;
-
     // Initialize the glut callbacks
     glutDisplayFunc(display);
     glutReshapeFunc(reshape);
@@ -232,4 +255,12 @@ int main(int argc, char **argv) {
 
     // Kick off the main loop
     glutMainLoop();
+
+    // Clean up upon exit
+    glutDestroyWindow(window);
+    if (shape) {
+        delete shape;
+        shape = nullptr;
+    }
+    return 0;
 }
