@@ -228,7 +228,8 @@ v3f Manifold<VertexType>::getAABBCentroid() const {
 // BUT TRUST ME IT SHOULD BE FASTER FOR IT
 template <class VertexType>
 void Manifold<VertexType>::drawFaces() const {
-    static const GLfloat white[] = { 1.0, 1.0, 1.0 };
+    static const GLfloat white[] = { 1.0f, 1.0f, 1.0f };
+    glEnable(GL_LIGHTING);
     glMaterialfv(GL_FRONT, GL_AMBIENT, white);
     glBegin(GL_TRIANGLES); {
         for (const auto &f : m_faces)
@@ -238,8 +239,9 @@ void Manifold<VertexType>::drawFaces() const {
 
 template <class VertexType>
 void Manifold<VertexType>::drawEdges() const {
-    static const GLfloat cyan[] = { 0.3, 1.0, 1.0 };
-    glMaterialfv(GL_FRONT, GL_AMBIENT, cyan);
+    static const GLfloat yellow[] = { 1.0f, 1.0f, 0.0f, 1.0f };
+    glDisable(GL_LIGHTING);
+    glColor4fv(yellow);
     glBegin(GL_LINES); {
         for (const auto &e : m_edges)
             e.draw();
@@ -248,8 +250,9 @@ void Manifold<VertexType>::drawEdges() const {
 
 template <class VertexType>
 void Manifold<VertexType>::drawVertices() const {
-    static const GLfloat red[] = { 1.0, 0.3, 0.3 };
-    glMaterialfv(GL_FRONT, GL_AMBIENT, red);
+    static const GLfloat red[] = { 1.0f, 0.0f, 0.0f, 1.0f };
+    glDisable(GL_LIGHTING);
+    glColor4fv(red);
     glBegin(GL_POINTS); {
         for (const auto &v : m_vertices)
             v.draw();

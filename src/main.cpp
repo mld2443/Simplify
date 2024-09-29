@@ -247,7 +247,6 @@ int main(int argc, char **argv) {
     glClearColor(0, 0, 0, 1);
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_LIGHT0);
-    glEnable(GL_LIGHTING);
     glEnable(GL_CULL_FACE);
 
     // Center the model in viewspace and zoom in/out so it takes up most of the screen

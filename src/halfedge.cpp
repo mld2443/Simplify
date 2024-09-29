@@ -144,7 +144,7 @@ v3f Face::centroid() const {
 }
 
 void Face::draw() const {
-    v3f n = normal();
+    const v3f n = normal();
     glNormal3fv(&n.x);
 
     he->traverseFace([](Halfedge* he){ he->v->draw(); });
