@@ -19,5 +19,5 @@ public:
     void simplify(const unsigned long count);
 
 private:
-    unsigned long m_countDeletedFaces;
+    size_t m_countDeletedFaces;
 };

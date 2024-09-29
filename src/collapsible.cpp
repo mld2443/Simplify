@@ -103,32 +103,31 @@ void Collapsible::simplify(const size_t count) {
         bool dirty() const { return e->dirty; }
         bool valid() const { return e->valid; }
 
-        bool operator<(const EdgeWithError& e) const { return error < e.error; }
+        auto operator<=>(const EdgeWithError& e) const { return error <=> e.error; }
     };
 
     // Populate the priority queue
-    std::priority_queue<EdgeWithError, std::vector<EdgeWithError>> errors;
+    std::priority_queue<EdgeWithError, std::vector<EdgeWithError>, std::greater<EdgeWithError>> errors;
     for (auto &e : m_edges) {
         errors.push({ &e });
     }
 
     // The heart of the algorithm
-    while (m_faces.size() - m_countDeletedFaces > count) {
+    while (m_countDeletedFaces + count < m_faces.size()) {
         if (errors.empty()) { // No more safe edges! Panic!
-            m_countDeletedFaces = (unsigned int)m_faces.size();
+            break;
         } else {
             auto elem = errors.top();
             if (elem.dirty()) {
-                auto e = errors.top().e;
+                // Error has been increase, recalculate it
                 errors.pop();
-                e->dirty = false;
-                errors.push({ e });
+                elem.e->dirty = false;
+                errors.push({ elem.e });
             } else {
                 if (!elem.valid()) { // invalid?
                     errors.pop();
-                }
-                else {
-                    if (checkSafety(elem.e)) { //unsafe edge
+                } else {
+                    if (!checkSafety(elem.e)) { //unsafe edge
                         errors.top().e->unsafe = true;
                         errors.pop();
                     } else { // Collapse it!

@@ -9,7 +9,7 @@ int g_window = 0;
 bool g_simplified = false;
 unsigned g_target = 0u;
 const char *g_fileName;
-Manifold<> *g_shape;
+Collapsible *g_shape;
 bool g_showFaces = true, g_showEdges = false, g_showVertices = false;
 
 // mouse state
@@ -118,15 +118,15 @@ static void resetViewMatrix() {
 static void keyboard(unsigned char key, int x, int y) {
     switch(key)
     {
-    // case ' ':
-    //     if (g_simplified) {
-    //         delete g_shape;
-    //         g_shape = new Manifold<>(g_fileName);
-    //     } else {
-    //         g_shape->simplify(g_target);
-    //     }
-    //     g_simplified = !g_simplified;
-    //     break;
+    case ' ':
+        if (g_simplified) {
+            delete g_shape;
+            g_shape = new Collapsible(g_fileName);
+        } else {
+            g_shape->simplify(g_target);
+        }
+        g_simplified = !g_simplified;
+        break;
 
     case 'p':
         g_showVertices = !g_showVertices;
@@ -204,7 +204,7 @@ static void specialkey(int key, int x, int y) {
 int main(int argc, char **argv) {
     // Load the model
     g_fileName = "...";
-    g_shape = new Manifold<>(g_fileName);
+    g_shape = new Collapsible(g_fileName);
     g_target = 2000u;
 
     // Prepare the window
