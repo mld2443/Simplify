@@ -148,5 +148,7 @@ void Collapsible::simplify(const size_t count) {
         }
     }
 
+#ifndef NDEBUG
     verify();
+#endif
 }

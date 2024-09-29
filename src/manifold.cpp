@@ -42,7 +42,7 @@ float Manifold<VertexType>::AABB::Dimension::centroid() const {
 }
 
 template <class VertexType>
-void Manifold<VertexType>::AABB::addPoint(const v3f& v) {
+void Manifold<VertexType>::AABB::addSample(const v3f& v) {
     x.addSample(v.x);
     y.addSample(v.y);
     z.addSample(v.z);
@@ -53,23 +53,6 @@ void Manifold<VertexType>::AABB::addPoint(const v3f& v) {
 // Manifold //
 //////////////
 // PRIVATE FUNCTIONS
-
-// very time expensive
-// this is the only code that prevents working with non-triangular meshes
-template <class VertexType>
-bool Manifold<VertexType>::checkSafety(const Edge *e) const {
-    auto v1nbrs(e->he->v->neighbors());
-    auto v2nbrs(e->he->flip->v->neighbors());
-    sort(v1nbrs.begin(), v1nbrs.end());
-    sort(v2nbrs.begin(), v2nbrs.end());
-    vector<Vertex*> intersect(v1nbrs.size() + v2nbrs.size());
-    auto it = set_intersection(v1nbrs.begin(), v1nbrs.end(), v2nbrs.begin(), v2nbrs.end(), intersect.begin());
-
-    if (it-intersect.begin() == 2)
-        return true;
-
-    return false;
-}
 
 template <class VertexType>
 Vertex* Manifold<VertexType>::addPoint(v3f& p) {
@@ -83,7 +66,7 @@ static edgeHashType *p_edgeHash = nullptr;
 template <class VertexType>
 void Manifold<VertexType>::addFace(const list<Vertex*>& verts) {
     static const auto lookupEdge = [&] (const Vertex *v1, const Vertex* v2) {
-        const auto key = std::pair<const Vertex*, const Vertex*>(max(v1, v2), min(v1, v2));
+        const auto key = pair<const Vertex*, const Vertex*>(max(v1, v2), min(v1, v2));
 
         if (auto result = p_edgeHash->find(key); result != p_edgeHash->end())
             return result->second;
@@ -196,7 +179,7 @@ Manifold<VertexType>::Manifold(const char* objfile, bool invert) {
             v3f p;
             file >> p;
 
-            m_bounds.addPoint(p);
+            m_bounds.addSample(p);
 
             v_pointers.push_back(addPoint(p));
         }

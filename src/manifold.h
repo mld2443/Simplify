@@ -21,10 +21,8 @@ private:
 
         Dimension x, y, z;
 
-        void addPoint(const v3f& v);
+        void addSample(const v3f& v);
     };
-
-    bool checkSafety(const Edge *e) const;
 
     Vertex* addPoint(v3f& p);
     void addFace(const std::list<Vertex*>& verts);

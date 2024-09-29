@@ -1,6 +1,7 @@
 #include "collapsible.h"
 
-#include <GL/freeglut.h> // glut*, gluPerspective, gl*
+#include <GL/freeglut.h> // glut*, gl*
+#include <cmath>         // tanf
 #include <cstdlib>       // atoi
 
 
@@ -11,6 +12,7 @@ unsigned g_target = 0u;
 const char *g_fileName;
 Collapsible *g_shape;
 bool g_showFaces = true, g_showEdges = false, g_showVertices = false;
+bool g_toggle = false;
 
 // mouse state
 int g_prevX = 0, g_prevY = 0;
@@ -23,13 +25,45 @@ float g_modelView[16] = { 1, 0, 0, 0,
                           0, 0, 0, 1 };
 float g_focus[3] = { 0, 0, 0 };
 
+
+static void setPerspective(float fovx, float aspect, float znear, float zfar) {
+    constexpr float PI_360 = 3.1415926535897932 / 360.0;
+    const float xmax = znear * std::tan(fovx * PI_360);
+    const float ymax = xmax / aspect;
+    const float zclip = -(zfar + znear) / (zfar - znear);
+    const float shear = (-2.0f * znear * zfar) / (zfar - znear);
+
+    float matrix[16] = { znear/xmax, 0.0f,       0.0f,  0.0f,
+                         0.0f,       znear/ymax, 0.0f,  0.0f,
+                         0.0f,       0.0f,       zclip, -1.0f,
+                         0.0f,       0.0f,       shear, 0.0f };
+
+    glMultMatrixf(matrix);
+}
+
+static void resetViewMatrix() {
+    for (int i = 0; i < 16; ++i) {
+        g_modelView[i] = i % 5 ? 0.0f : 1.0f;
+    }
+    const auto offset = -g_shape->getAABBCentroid();
+    g_modelView[12] = offset.x;
+    g_modelView[13] = offset.y;
+    g_modelView[14] = offset.z;
+
+    g_focus[0] = g_focus[1] = 0.0f;
+    g_focus[2] = -g_shape->getAABBSizes().max();
+}
+
+////////////////////
+// GLUT CALLBACKS //
+////////////////////
 static void display() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     // Set up viewing matrices
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    gluPerspective(60.0, double(WINDOW_WIDTH)/double(WINDOW_HEIGHT), 0.0001, 100.0);
+    setPerspective(85.0f, double(WINDOW_WIDTH)/double(WINDOW_HEIGHT), 0.0001, 100.0);
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 
@@ -102,19 +136,6 @@ static void motion(int x, int y) {
     glutPostRedisplay();
 }
 
-static void resetViewMatrix() {
-    for (int i = 0; i < 16; ++i) {
-        g_modelView[i] = i % 5 ? 0.0f : 1.0f;
-    }
-
-    const auto offset = -g_shape->getAABBCentroid();
-    g_modelView[12] = offset.x;
-    g_modelView[13] = offset.y;
-    g_modelView[14] = offset.z;
-    g_focus[0] = g_focus[1] = 0.0f;
-    g_focus[2] = -g_shape->getAABBSizes().max();
-}
-
 static void keyboard(unsigned char key, int x, int y) {
     switch(key)
     {
@@ -139,7 +160,8 @@ static void keyboard(unsigned char key, int x, int y) {
         break;
 
     case 9: //tab
-        return;
+        g_toggle = !g_toggle;
+        break;
 
     case 13: //return
         return;
@@ -201,6 +223,9 @@ static void specialkey(int key, int x, int y) {
     }
 }
 
+//////////
+// MAIN //
+//////////
 int main(int argc, char **argv) {
     // Load the model
     g_fileName = "...";
