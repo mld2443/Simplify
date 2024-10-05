@@ -28,11 +28,11 @@ private:
 
 protected:
 #ifndef NDEBUG
-    void verify();
+    void verifyConnections();
 #endif
 
 public:
-    Manifold(const char* objfile, bool invert = false);
+    Manifold(const char* objfile);
 
     f32v3 getAABBSizes() const;
     f32v3 getAABBCentroid() const;
@@ -40,6 +40,8 @@ public:
     void drawFaces() const;
     void drawEdges() const;
     void drawVertices() const;
+
+    void saveToFile(const char* filename) const;
 
 protected:
     std::list<VertexType> m_vertices;
@@ -49,4 +51,5 @@ protected:
 
 private:
     AABB m_bounds;
+    bool m_trianglesOnly;
 };

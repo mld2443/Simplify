@@ -1,6 +1,6 @@
 #include "collapsible.h"
 
-#include <iostream>  // cout
+#include <iostream>  // cout, endl
 #include <algorithm> // sort, set_intersection
 #include <queue>     // priority_queue
 #include <fstream>   // ifstream
@@ -59,9 +59,10 @@ float Collapsible::getCombinedError(const Edge* e) {
 // PRIVATE FUNCTIONS
 
 bool Collapsible::checkSafety(const Edge *e) {
-    if (e->he->f->degree() <= 3ul && e->he->prev->v->degree() <= 3ul)
+    // Check for triangles with opposite valence 3 vertices, these are unsafe to collapse
+    if (e->he->f->isTriangle() && e->he->prev->v->isValence3())
         return false;
-    if (e->he->flip->f->degree() <= 3ul && e->he->flip->prev->v->degree() <= 3ul)
+    if (e->he->flip->f->isTriangle() && e->he->flip->prev->v->isValence3())
         return false;
     return true;
 }
@@ -74,8 +75,7 @@ Vertex* Collapsible::collapse(Edge *e) {
     combined->pos = getNewPoint(e);
 
     // Collapse the triangle and record how many faces we removed
-    m_countDeletedFaces += e->he->collapse();
-
+    m_removedCount += e->he->collapse();
 
     getQEF(combined) = combinedError;
     return combined;
@@ -84,14 +84,14 @@ Vertex* Collapsible::collapse(Edge *e) {
 
 // PUBLIC FUNCTIONS
 
-Collapsible::Collapsible(const char* objfile, bool invert)
-  : Manifold(objfile, invert)
-  , m_countDeletedFaces(0ul) {
+Collapsible::Collapsible(const char* objfile)
+  : Manifold(objfile)
+  , m_removedCount(0ul) {
     for (auto &v : m_vertices)
         v.calcQEF();
 }
 
-void Collapsible::simplify(const size_t count) {
+void Collapsible::simplify(uint64_t finalCount) {
     struct EdgeWithError {
         Edge *e;
         float error;
@@ -104,19 +104,22 @@ void Collapsible::simplify(const size_t count) {
 
     // Populate the priority queue
     priority_queue<EdgeWithError, vector<EdgeWithError>, greater<EdgeWithError>> errors;
-    for (auto &e : m_edges) {
+    for (auto &e : m_edges)
         errors.emplace(&e);
-    }
 
     // The heart of the algorithm
-    while (m_countDeletedFaces + count < m_faces.size()) {
-        if (errors.empty()) { // No more safe edges! Panic!
+    const uint64_t delta = m_faces.size() - finalCount;
+    // const uint64_t gradations = 100;
+    // uint64_t reported = 0ul;
+    while (m_removedCount < delta) {
+        if (errors.empty()) {
+            // No more safe edges! Panic!
             break;
         } else {
             Edge *top = errors.top().e;
 
-            if (top->he == nullptr) {
-                // This edge has been removed during a collapse, remove it here too
+            if (!*top) {
+                // This edge has been deleted during a collapse, remove it from queue
                 errors.pop();
             } else if (top->dirty) {
                 // Error has been increased, recalculate it
@@ -124,7 +127,7 @@ void Collapsible::simplify(const size_t count) {
                 top->dirty = false;
                 errors.emplace(top);
             } else if (!checkSafety(top)) {
-                // Unsafe edge, remove it and add it back if a neighbor collapses
+                // Unsafe edge, remove it, but we'll add it back if a neighbor collapses
                 top->unsafe = true;
                 errors.pop();
             } else { // Collapse it!
@@ -142,11 +145,16 @@ void Collapsible::simplify(const size_t count) {
     }
 
 #ifndef NDEBUG
-    verify();
+    verifyConnections();
 #endif
 
-    m_vertices.remove_if(invalid());
-    m_faces.remove_if(invalid());
-    m_edges.remove_if(invalid());
-    m_halfedges.remove_if(invalid());
+    cout << "Sizes: " << m_vertices.size() << " vertices, " << m_faces.size() << " faces, " << m_edges.size() << " edges, " << m_halfedges.size() << " halfedges" << endl;
+
+    const size_t rV = m_vertices.remove_if([](auto& v){ return !v; });
+    const size_t rF = m_faces.remove_if([](auto& f){ return !f; });
+    const size_t rE = m_edges.remove_if([](auto& e){ return !e; });
+    const size_t rH = m_halfedges.remove_if([](auto& he){ return !he; });
+
+    cout << "Removed: " << rV << " vertices, " << rF << " faces, " << rE << " edges, " << rH << " halfedges" << endl;
+    cout << "Remaining: " << m_vertices.size() << " vertices, " << m_faces.size() << " faces, " << m_edges.size() << " edges, " << m_halfedges.size() << " halfedges" << endl;
 }

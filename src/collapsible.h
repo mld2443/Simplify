@@ -14,10 +14,10 @@ private:
     Vertex* collapse(Edge *e);
 
 public:
-    Collapsible(const char* objfile, bool invert = false);
+    Collapsible(const char* objfile);
 
-    void simplify(const unsigned long count);
+    void simplify(uint64_t finalCount);
 
 private:
-    size_t m_countDeletedFaces;
+    size_t m_removedCount;
 };

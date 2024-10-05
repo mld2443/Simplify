@@ -51,19 +51,19 @@ void Manifold<VertexType>::AABB::addSample(const f32v3& v) {
 // PRIVATE FUNCTIONS
 
 using edgeHashType = map<pair<const Vertex*, const Vertex*>, Edge*>;
-static edgeHashType *p_edgeHash = nullptr;
+static edgeHashType *s_edgeHash = nullptr;
 
 template <class VertexType>
 void Manifold<VertexType>::addFace(const list<Vertex*>& verts) {
     static const auto lookupEdge = [&] (const Vertex *v1, const Vertex* v2) {
         const auto key = pair<const Vertex*, const Vertex*>(max(v1, v2), min(v1, v2));
 
-        if (auto result = p_edgeHash->find(key); result != p_edgeHash->end())
+        if (auto result = s_edgeHash->find(key); result != s_edgeHash->end())
             return result->second;
 
         m_edges.emplace_back(nullptr, false, false);
 
-        return (*p_edgeHash)[key] = &m_edges.back();
+        return (*s_edgeHash)[key] = &m_edges.back();
     };
 
     m_faces.emplace_back(nullptr);
@@ -97,48 +97,40 @@ void Manifold<VertexType>::addFace(const list<Vertex*>& verts) {
 
 #ifndef NDEBUG
 template <class VertexType>
-void Manifold<VertexType>::verify() {
-    unsigned result = 0;
+void Manifold<VertexType>::verifyConnections() {
+    for (const auto &halfedge : m_halfedges) {
+        if (halfedge) {
+            if (halfedge.v->he == nullptr)
+                throw 1u<<0u;
+            if (halfedge.e->he == nullptr)
+                throw 1u<<1u;
+            if (halfedge.f->he == nullptr)
+                throw 1u<<2u;
+            if (halfedge.flip->flip != &halfedge)
+                throw 1u<<3u;
+        }
+    }
 
     for (const auto &vertex : m_vertices)
-        if (vertex.he && vertex.he->f == nullptr)
-                result |= 1u<<0u;
+        if (vertex && vertex.he->v != &vertex)
+                throw 1u<<4u;
+
+    for (const auto &edge : m_edges)
+        if (edge && edge.he->e != &edge)
+                throw 1u<<5u;
 
     for (const auto &face : m_faces) {
-        if (face.he) {
-            if (face.he->f == nullptr)
-                result |= 1u<<1u;
-#if 0
-            // Test for triangleness
-            if (face.he->next->next->next != face.he)
-                result |= 1u<<2u;
-            if (face.he->prev->prev->prev != face.he)
-                result |= 1u<<3u;
-#endif
+        if (face) {
+            if (face.he->f != &face)
+                throw 1u<<6u;
+            if (m_trianglesOnly) {
+                if (face.he->next->next->next != face.he)
+                    throw 1u<<7u;
+                if (face.he->prev->prev->prev != face.he)
+                    throw 1u<<8u;
+            }
         }
     }
-    for (const auto &edge : m_edges) {
-        if (edge.he) {
-            if (edge.he->f == nullptr)
-                result |= 1u<<8u;
-        }
-    }
-    for (const auto &halfedge : m_halfedges) {
-        if (halfedge.f) {
-            if (halfedge.v->he == nullptr)
-                result |= 1u<<4u;
-            if (halfedge.e->he == nullptr)
-                result |= 1u<<5u;
-            if (halfedge.f->he == nullptr)
-                result |= 1u<<6u;
-            if (&halfedge != halfedge.flip->flip)
-                result |= 1u<<7u;
-        }
-    }
-
-    // Probably catastrophic enough to just throw it
-    if (result)
-        throw result;
 }
 #endif
 
@@ -146,11 +138,11 @@ void Manifold<VertexType>::verify() {
 // PUBLIC FUNCTIONS
 
 template <class VertexType>
-Manifold<VertexType>::Manifold(const char* objfile, bool invert) {
+Manifold<VertexType>::Manifold(const char* objfile) : m_trianglesOnly(true) {
     edgeHashType edgeHash;
-    p_edgeHash = &edgeHash;
+    s_edgeHash = &edgeHash;
 
-    vector<Vertex*> v_pointers;
+    vector<Vertex*> vertexPointers;
     ifstream file(objfile);
     string token;
 
@@ -160,20 +152,18 @@ Manifold<VertexType>::Manifold(const char* objfile, bool invert) {
         if (token[0] == '#') {
             string dummy;
             getline(file, dummy);
-        }
+        } else if (token[0] == 'v' && token[1] != 'n') {
         // Process vertices, discard normals
-        else if (token[0] == 'v' && token[1] != 'n') {
             f32v3 p;
             file >> p;
 
             m_bounds.addSample(p);
 
             m_vertices.push_back({ nullptr, p });
-            v_pointers.push_back(&m_vertices.back());
-        }
-        // Process faces
-        else if (token[0] == 'f') {
-            list<Vertex*> face_verts;
+            vertexPointers.push_back(&m_vertices.back());
+        } else if (token[0] == 'f') {
+            // Process faces
+            list<Vertex*> faceVerts;
             file >> ws;
             while (isdigit(file.peek())) {
                 string vnum;
@@ -183,22 +173,21 @@ Manifold<VertexType>::Manifold(const char* objfile, bool invert) {
                 if (size_t found = vnum.find("/"); found != string::npos)
                     vnum = vnum.substr(0, found);
 
-                // Some models may be inside out
-                if (invert)
-                    face_verts.push_front(v_pointers[stoul(vnum) - 1]);
-                else
-                    face_verts.push_back(v_pointers[stoul(vnum) - 1]);
+                faceVerts.push_back(vertexPointers[stoul(vnum) - 1]);
             }
 
-            addFace(face_verts);
+            if (faceVerts.size() > 3ul)
+                m_trianglesOnly = false;
+
+            addFace(faceVerts);
         }
     }
 
     file.close();
-    p_edgeHash = nullptr;
+    s_edgeHash = nullptr;
 
 #ifndef NDEBUG
-    verify();
+    verifyConnections();
 #endif
 }
 
@@ -212,17 +201,30 @@ f32v3 Manifold<VertexType>::getAABBCentroid() const {
     return { m_bounds.x.centroid(), m_bounds.y.centroid(), m_bounds.z.centroid() };
 }
 
-// THIS FUNCTION ALSO LIMITS MODELS TO TRIANGLES
-// BUT TRUST ME IT SHOULD BE FASTER FOR IT
 template <class VertexType>
 void Manifold<VertexType>::drawFaces() const {
     static const GLfloat white[] = { 1.0f, 1.0f, 1.0f };
     glEnable(GL_LIGHTING);
     glMaterialfv(GL_FRONT, GL_AMBIENT, white);
+
+    list<const Face*> nonTris;
+
+    // Should be faster
     glBegin(GL_TRIANGLES); {
         for (const auto &f : m_faces)
+        if (m_trianglesOnly || f.isTriangle())
             f.draw();
+        else
+            nonTris.push_back(&f);
     } glEnd();
+
+    static const GLfloat blue[] = { 0.6f, 0.6f, 1.0f };
+    glMaterialfv(GL_FRONT, GL_AMBIENT, blue);
+    for (const auto *f : nonTris) {
+        glBegin(GL_POLYGON); {
+            f->draw();
+        } glEnd();
+    }
 }
 
 template <class VertexType>

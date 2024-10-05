@@ -1,29 +1,28 @@
 #include "collapsible.h"
 
 #include <GL/freeglut.h> // glut*, gl*
-#include <cmath>         // tanf
-#include <cstdlib>       // atoi
+#include <cmath>         // tan
 
 
-int g_windowWidth = 1440, g_windowHeight = 900;
-int g_windowHandle = 0;
-bool g_simplified = false;
-unsigned g_target = 0u;
-const char *g_fileName;
-Collapsible *g_shape;
-bool g_showFaces = true, g_showEdges = false, g_showVertices = false;
-bool g_toggle = false;
+int windowWidth = 1440, windowHeight = 900;
+int windowHandle = 0;
+bool simplified = false;
+unsigned target = 0u;
+const char *fileName;
+Collapsible *shape;
+bool showFaces = true, showEdges = false, showVertices = false;
+bool toggle = false;
 
 // mouse state
-int g_prevX = 0, g_prevY = 0;
-bool g_leftPressed = false, g_rightPressed = false, g_middlePressed = false;
+int prevX = 0, prevY = 0;
+bool leftPressed = false, rightPressed = false, middlePressed = false;
 
 // view state
-float g_modelView[16] = { 1, 0, 0, 0,
+float modelView[16] = { 1, 0, 0, 0,
                           0, 1, 0, 0,
                           0, 0, 1, 0,
                           0, 0, 0, 1 };
-float g_focus[3] = { 0, 0, 0 };
+float focus[3] = { 0, 0, 0 };
 
 
 static void setPerspective(float fovx, float aspect, float near, float far) {
@@ -52,15 +51,15 @@ static void setOrthographic(float xmin, float ymin, float xmax, float ymax, floa
 
 static void resetViewMatrix() {
     for (int i = 0; i < 16; ++i) {
-        g_modelView[i] = i % 5 ? 0.0f : 1.0f;
+        ::modelView[i] = i % 5 ? 0.0f : 1.0f;
     }
-    const auto offset = -g_shape->getAABBCentroid();
-    g_modelView[12] = offset.x;
-    g_modelView[13] = offset.y;
-    g_modelView[14] = offset.z;
+    const auto offset = -::shape->getAABBCentroid();
+    ::modelView[12] = offset.x;
+    ::modelView[13] = offset.y;
+    ::modelView[14] = offset.z;
 
-    g_focus[0] = g_focus[1] = 0.0f;
-    g_focus[2] = -g_shape->getAABBSizes().max();
+    ::focus[0] = ::focus[1] = 0.0f;
+    ::focus[2] = -::shape->getAABBSizes().max();
 }
 
 ////////////////////
@@ -72,22 +71,22 @@ static void display() {
     { // Set up scene
         glEnable(GL_DEPTH);
         glEnable(GL_DEPTH_TEST);
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-        setPerspective(85.0f, double(g_windowWidth)/double(g_windowHeight), 0.0001, 100.0);
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
+        glMatrixMode(GL_PROJECTION);
+        glLoadIdentity();
+        ::setPerspective(85.0f, double(::windowWidth)/double(::windowHeight), 0.0001, 100.0);
+        glMatrixMode(GL_MODELVIEW);
+        glLoadIdentity();
 
-    glTranslatef(g_focus[0], g_focus[1], g_focus[2]);
-    glMultMatrixf(g_modelView);
+        glTranslatef(::focus[0], ::focus[1], ::focus[2]);
+        glMultMatrixf(::modelView);
 
         // Models
-    if (g_showVertices)
-        g_shape->drawVertices();
-    if (g_showEdges)
-        g_shape->drawEdges();
-    if (g_showFaces)
-        g_shape->drawFaces();
+        if (::showVertices)
+            ::shape->drawVertices();
+        if (::showEdges)
+            ::shape->drawEdges();
+        if (::showFaces)
+            ::shape->drawFaces();
     }
 
     // Submit
@@ -97,90 +96,89 @@ static void display() {
 
 static void reshape(int width, int height) {
     glViewport(0, 0, width, height);
-    g_windowWidth = width;
-    g_windowHeight = height;
+    ::windowWidth = width;
+    ::windowHeight = height;
 }
 
 static void mouse(int button, int state, int x, int y) {
-    y = g_windowHeight - y;
+    y = ::windowHeight - y;
 
     // Mouse state that should always be stored on pressing
     if (state == GLUT_DOWN) {
-        g_prevX = x;
-        g_prevY = y;
+        ::prevX = x;
+        ::prevY = y;
     }
 
     if (button == GLUT_LEFT_BUTTON) {
-        g_leftPressed = state == GLUT_DOWN;
+        ::leftPressed = state == GLUT_DOWN;
     }
     else if (button == GLUT_RIGHT_BUTTON) {
-        g_rightPressed = state == GLUT_DOWN;
+        ::rightPressed = state == GLUT_DOWN;
     }
     else if (button == GLUT_MIDDLE_BUTTON) {
-        g_middlePressed = state == GLUT_DOWN;
+        ::middlePressed = state == GLUT_DOWN;
     }
 }
 
 static void motion(int x, int y) {
-    y = g_windowHeight - y;
+    y = ::windowHeight - y;
 
-    const float dx = (x - g_prevX);
-    const float dy = (y - g_prevY);
+    const float dx = (x - ::prevX);
+    const float dy = (y - ::prevY);
 
     // rotate the scene
-    if (g_leftPressed) {
+    if (::leftPressed) {
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
         glRotatef(dx, 0, 1, 0);
         glRotatef(dy, -1, 0, 0);
-        glMultMatrixf(g_modelView);
-        glGetFloatv(GL_MODELVIEW_MATRIX, g_modelView);
-    } else if (g_middlePressed) {
-        g_focus[0] += 0.005 * dx;
-        g_focus[1] += 0.005 * dy;
-    } else if (g_rightPressed) {
-        g_focus[2] += 0.01 * dy;
+        glMultMatrixf(::modelView);
+        glGetFloatv(GL_MODELVIEW_MATRIX, ::modelView);
+    } else if (::middlePressed) {
+        ::focus[0] += 0.005 * dx;
+        ::focus[1] += 0.005 * dy;
+    } else if (::rightPressed) {
+        ::focus[2] += 0.01 * dy;
     }
 
     // Store previous mouse positions
-    g_prevX = x;
-    g_prevY = y;
+    ::prevX = x;
+    ::prevY = y;
 
     glutPostRedisplay();
 }
 
 static void keyboard(unsigned char key, int x, int y) {
-    switch(key)
-    {
+    switch(key) {
     case ' ':
-        if (g_simplified) {
-            delete g_shape;
-            g_shape = new Collapsible(g_fileName);
+        if (::simplified) {
+            delete ::shape;
+            ::shape = new Collapsible(::fileName);
         } else {
-            g_shape->simplify(g_target);
+            ::shape->simplify(::target);
         }
-        g_simplified = !g_simplified;
+        ::simplified = !::simplified;
         break;
 
     case 'p':
-        g_showVertices = !g_showVertices;
+        ::showVertices = !::showVertices;
         break;
     case 'e':
-        g_showEdges = !g_showEdges;
+        ::showEdges = !::showEdges;
         break;
     case 'f':
-        g_showFaces = !g_showFaces;
+        ::showFaces = !::showFaces;
         break;
 
     case 9: //tab
-        g_toggle = !g_toggle;
+        ::toggle = !::toggle;
         break;
 
     case 13: //return
         return;
 
     case 8: //backspace
-        resetViewMatrix();
+        ::resetViewMatrix();
         break;
 
     case 127: //delete
@@ -199,7 +197,7 @@ static void keyboard(unsigned char key, int x, int y) {
         return;
 
     case 27: //escape
-        glutDestroyWindow(g_windowHandle);
+        glutDestroyWindow(::windowHandle);
         return;
 
     default:
@@ -212,22 +210,22 @@ static void keyboard(unsigned char key, int x, int y) {
 static void specialkey(int key, int x, int y) {
     switch (key) {
     case GLUT_KEY_UP:
-        g_focus[1] -= 0.05;
+        ::focus[1] -= 0.05;
         glutPostRedisplay();
         break;
 
     case GLUT_KEY_DOWN:
-        g_focus[1] += 0.05;
+        ::focus[1] += 0.05;
         glutPostRedisplay();
         break;
 
     case GLUT_KEY_LEFT:
-        g_focus[0] += 0.05;
+        ::focus[0] += 0.05;
         glutPostRedisplay();
         break;
 
     case GLUT_KEY_RIGHT:
-        g_focus[0] -= 0.05;
+        ::focus[0] -= 0.05;
         glutPostRedisplay();
         break;
 
@@ -241,46 +239,46 @@ static void specialkey(int key, int x, int y) {
 //////////
 int main(int argc, char **argv) {
     // Load the model
-    g_fileName = "...";
-    g_shape = new Collapsible(g_fileName);
-    g_target = 2000u;
+    ::fileName = "...";
+    ::shape = new Collapsible(::fileName);
+    ::target = 800u;
 
     // Prepare the window
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA | GLUT_DEPTH);
     glutInitWindowPosition(0, 0);
-    glutInitWindowSize(g_windowWidth, g_windowHeight);
-    g_windowHandle = glutCreateWindow("Manifold Surface Simplifier");
+    glutInitWindowSize(::windowWidth, ::windowHeight);
+    ::windowHandle = glutCreateWindow("Manifold Surface Simplifier");
 
     // Set up our openGL specific parameters
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    glViewport(0, 0, g_windowWidth, g_windowHeight);
+    glViewport(0, 0, ::windowWidth, ::windowHeight);
 
     glClearColor(0, 0, 0, 1);
-    glEnable(GL_DEPTH_TEST);
     glEnable(GL_LIGHT0);
     glEnable(GL_CULL_FACE);
 
     // Center the model in viewspace and zoom in/out so it takes up most of the screen
-    resetViewMatrix();
+    ::resetViewMatrix();
 
     // Initialize the glut callbacks
-    glutDisplayFunc(display);
-    glutReshapeFunc(reshape);
-    glutKeyboardFunc(keyboard);
-    glutSpecialFunc(specialkey);
-    glutMouseFunc(mouse);
-    glutMotionFunc(motion);
+    glutDisplayFunc(::display);
+    glutReshapeFunc(::reshape);
+    glutKeyboardFunc(::keyboard);
+    glutSpecialFunc(::specialkey);
+    glutMouseFunc(::mouse);
+    glutMotionFunc(::motion);
 
     // Kick off the main loop, return when window closes
     glutSetOption(GLUT_ACTION_ON_WINDOW_CLOSE, GLUT_ACTION_CONTINUE_EXECUTION);
     glutMainLoop();
 
     // Clean up upon exit
-    if (g_shape) {
-        delete g_shape;
-        g_shape = nullptr;
+    if (::shape) {
+        delete ::shape;
+        ::shape = nullptr;
     }
+
     return 0;
 }

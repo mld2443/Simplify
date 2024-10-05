@@ -2,11 +2,46 @@
 
 #include <GL/gl.h> // glVertex3fv, glNormal3fv
 
-using namespace std;
 
+static bool surgicalRemoval(Halfedge* he) {
+    if (he->f->isTriangle()) { // Triangles get removed
+        // Update outer flips
+        he->prev->flip->flip = he->next->flip;
+        he->next->flip->flip = he->prev->flip;
 
+        // Update outer edges
+        he->prev->e->he = he->prev->flip;
+        he->next->flip->e = he->prev->e;
+
+        // Ensure the outside point points to removed halfedge
+        he->prev->v->he = he->next->flip;
+
+        // Mark all these for removal
+        he->next->e->he = nullptr;
+        he->prev->f = nullptr;
+        he->next->f = nullptr;
+        he->f->he = nullptr;
+        he->f = nullptr;
+
+        return true;
+    } else { // More than 3 sides, just a little housekeeping
+        // Make sure the face is not pointing at this particular halfedge
+        he->f->he = he->next;
+
+        // Update edges to skip this obselete halfedge
+        he->prev->next = he->next;
+        he->next->prev = he->prev;
+
+        // Still marks the halfedge to be removed
+        he->f = nullptr;
+
+        return false;
+    }
+}
+
+// Pretty much irreversible, better mean it!
 uint64_t Halfedge::collapse() {
-    uint64_t deleted_faces = 0ul;
+    uint64_t deletedFaces = 0ul;
 
     // Make this vertex point to a different halfedge with the same root
     v->he = prev->flip;
@@ -20,77 +55,18 @@ uint64_t Halfedge::collapse() {
         condemned->he = nullptr;
     }
 
-    // Check if this face is a triangle
-    if (next->next == prev) {
-        ++deleted_faces;
-
-        // Update outer flips
-        prev->flip->flip = next->flip;
-        next->flip->flip = prev->flip;
-
-        // Update outer edges
-        prev->e->he = prev->flip;
-        next->flip->e = prev->e;
-
-        // Ensure the outside point points to removed halfedge
-        prev->v->he = next->flip;
-
-        // Mark all these for removal
-        next->e->he = nullptr;
-        prev->f = nullptr;
-        next->f = nullptr;
-        f->he = nullptr;
-    } else {
-        // Update edges to skip this obselete halfedge
-        prev->next = next;
-        next->prev = prev;
-    }
-
-    // Remove this halfedge
-    f = nullptr;
-
-    // Check if the flip's face is a triangle
-    if (flip->next->next == flip->prev) {
-        ++deleted_faces;
-
-        // Update outer flip's flips
-        flip->prev->flip->flip = flip->next->flip;
-        flip->next->flip->flip = flip->prev->flip;
-
-        // Update flip's outer edges
-        flip->next->e->he = flip->next->flip;
-        flip->prev->flip->e = flip->next->e;
-
-        // Ensure the flip's outside point points to removed halfedge
-        flip->prev->v->he = flip->next->flip;
-
-        // Mark all removed flip objects
-        flip->prev->e->he = nullptr;
-        flip->prev->f = nullptr;
-        flip->next->f = nullptr;
-        flip->f->he = nullptr;
-    } else {
-        // Update flip's edges to skip this obselete halfedge
-        flip->prev->next = flip->next;
-        flip->next->prev = flip->prev;
-    }
-
-    // Mark the opposite halfedge for removal
-    flip->f = nullptr;
+    deletedFaces += surgicalRemoval(flip);
+    deletedFaces += surgicalRemoval(this);
 
     // Mark the edge for removal
     e->he = nullptr;
 
-    return deleted_faces;
+    return deletedFaces;
 }
 
 
-uint64_t Vertex::degree() const {
-    uint64_t degree = 0ul;
-
-    traverseEdges([&](Halfedge*) { ++degree; });
-
-    return degree;
+bool Vertex::isValence3() const {
+    return he->flip->next->flip->next->flip->next == he;
 }
 
 void Vertex::traverseEdges(std::function<void(Halfedge*)> op) const {
@@ -127,12 +103,8 @@ f32v3 Face::centroid() const {
     return sum / degree;
 }
 
-uint64_t Face::degree() const {
-    uint64_t degree = 0ul;
-
-    traversePerimeter([&](Halfedge*) { ++degree; });
-
-    return degree;
+bool Face::isTriangle() const {
+    return he->next->next->next == he;
 }
 
 void Face::traversePerimeter(std::function<void(Halfedge*)> op) const {
