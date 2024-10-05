@@ -21,7 +21,7 @@ private:
 
         Dimension x, y, z;
 
-        void addSample(const v3f& v);
+        void addSample(const f32v3& v);
     };
 
     void addFace(const std::list<Vertex*>& verts);
@@ -34,8 +34,8 @@ protected:
 public:
     Manifold(const char* objfile, bool invert = false);
 
-    v3f getAABBSizes() const;
-    v3f getAABBCentroid() const;
+    f32v3 getAABBSizes() const;
+    f32v3 getAABBCentroid() const;
 
     void drawFaces() const;
     void drawEdges() const;

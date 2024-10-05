@@ -7,10 +7,10 @@
 class Collapsible : public Manifold<QEFVertex> {
 private:
     static QuadraticErrorFunction& getQEF(Vertex* v);
-    static v3f getNewPoint(const Edge* e);
+    static f32v3 getNewPoint(const Edge* e);
     static float getCombinedError(const Edge* e);
+    static bool checkSafety(const Edge *e);
 
-    bool checkSafety(const Edge *e) const;
     Vertex* collapse(Edge *e);
 
 public:

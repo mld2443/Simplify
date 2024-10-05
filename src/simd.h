@@ -41,4 +41,4 @@ std::ostream& operator<<(std::ostream& os, const v3<T>& v) {
 }
 
 
-using v3f = v3<float>;
+using f32v3 = v3<float>;

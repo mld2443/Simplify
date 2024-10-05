@@ -5,14 +5,14 @@
 
 struct QuadraticErrorFunction {
     float n;
-    v3f Sv;
+    f32v3 Sv;
     float Svtv;
 
     QuadraticErrorFunction() = default;
-    QuadraticErrorFunction(float n, const v3f& Sv, float Svtv);
+    QuadraticErrorFunction(float n, const f32v3& Sv, float Svtv);
     QuadraticErrorFunction(Halfedge* he);
 
-    float eval(const v3f& v) const;
+    float eval(const f32v3& v) const;
 
     QuadraticErrorFunction operator+(const QuadraticErrorFunction& qef) const;
 };

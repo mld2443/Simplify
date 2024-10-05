@@ -14,18 +14,18 @@ using namespace std;
 /////////////////
 // QEF, Vertex //
 /////////////////
-QuadraticErrorFunction::QuadraticErrorFunction(float n, const v3f& Sv, float Svtv): n(n), Sv(Sv), Svtv(Svtv) {
+QuadraticErrorFunction::QuadraticErrorFunction(float n, const f32v3& Sv, float Svtv): n(n), Sv(Sv), Svtv(Svtv) {
 }
 
 QuadraticErrorFunction::QuadraticErrorFunction(Halfedge* he) : QuadraticErrorFunction() {
-    he->traverseVertex([&](Halfedge* it) {
+    he->v->traverseEdges([&](Halfedge* it) {
         ++n;
         Sv += it->flip->v->pos;
         Svtv += it->flip->v->pos.dot(it->flip->v->pos);
     });
 }
 
-float QuadraticErrorFunction::eval(const v3f& v) const {
+float QuadraticErrorFunction::eval(const f32v3& v) const {
     return n * v.dot(v) - 2 * v.dot(Sv) + Svtv;
 }
 
@@ -44,7 +44,7 @@ QuadraticErrorFunction& Collapsible::getQEF(Vertex *v) {
     return static_cast<QEFVertex*>(v)->qef;
 }
 
-v3f Collapsible::getNewPoint(const Edge *e) {
+f32v3 Collapsible::getNewPoint(const Edge *e) {
     return (getQEF(e->he->v).Sv + getQEF(e->he->flip->v).Sv)/(getQEF(e->he->v).n + getQEF(e->he->flip->v).n);
 }
 
@@ -58,32 +58,26 @@ float Collapsible::getCombinedError(const Edge* e) {
 /////////////////
 // PRIVATE FUNCTIONS
 
-// very time expensive
-// this is the only code that prevents working with non-triangular meshes
-bool Collapsible::checkSafety(const Edge *e) const {
-    auto v1nbrs(e->he->v->neighbors());
-    auto v2nbrs(e->he->flip->v->neighbors());
-    sort(v1nbrs.begin(), v1nbrs.end());
-    sort(v2nbrs.begin(), v2nbrs.end());
-    vector<Vertex*> intersect(v1nbrs.size() + v2nbrs.size());
-    auto it = set_intersection(v1nbrs.begin(), v1nbrs.end(), v2nbrs.begin(), v2nbrs.end(), intersect.begin());
-
-    if (it - intersect.begin() == 2)
-        return true;
-
-    return false;
+bool Collapsible::checkSafety(const Edge *e) {
+    if (e->he->f->degree() <= 3ul && e->he->prev->v->degree() <= 3ul)
+        return false;
+    if (e->he->flip->f->degree() <= 3ul && e->he->flip->prev->v->degree() <= 3ul)
+        return false;
+    return true;
 }
 
 Vertex* Collapsible::collapse(Edge *e) {
-    auto qef(getQEF(e->he->v) + getQEF(e->he->flip->v));
+    auto combinedError(getQEF(e->he->v) + getQEF(e->he->flip->v));
 
+    // Get the new point and calculate its position before altering the topology
     Vertex *combined = e->he->v;
     combined->pos = getNewPoint(e);
 
+    // Collapse the triangle and record how many faces we removed
     m_countDeletedFaces += e->he->collapse();
 
-    getQEF(combined) = qef;
 
+    getQEF(combined) = combinedError;
     return combined;
 }
 
@@ -121,7 +115,8 @@ void Collapsible::simplify(const size_t count) {
         } else {
             Edge *top = errors.top().e;
 
-            if (top->he == nullptr) { // invalid?
+            if (top->he == nullptr) {
+                // This edge has been removed during a collapse, remove it here too
                 errors.pop();
             } else if (top->dirty) {
                 // Error has been increased, recalculate it
@@ -135,7 +130,7 @@ void Collapsible::simplify(const size_t count) {
             } else { // Collapse it!
                 auto v = collapse(top);
 
-                v->he->traverseVertex([&](Halfedge* he) {
+                v->traverseEdges([&](Halfedge* he) {
                     he->e->dirty = true;
                     if (he->e->unsafe) {
                         he->e->unsafe = false;

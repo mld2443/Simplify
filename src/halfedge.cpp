@@ -14,7 +14,7 @@ uint64_t Halfedge::collapse() {
     {
         // While the halfedges are still connected, update the roots of the vertex to be removed
         Vertex *condemned = flip->v;
-        flip->traverseVertex([&](Halfedge* he){ he->v = this->v; });
+        flip->v->traverseEdges([&](Halfedge* he){ he->v = this->v; });
 
         // Mark this vertex for removal, have to save it off because the above changes flip->v
         condemned->he = nullptr;
@@ -84,25 +84,19 @@ uint64_t Halfedge::collapse() {
     return deleted_faces;
 }
 
-void Halfedge::traverseVertex(std::function<void(Halfedge*)> op) {
-    Halfedge *it = this;
-    do op(it);
-    while ((it = it->flip->next) != this);
+
+uint64_t Vertex::degree() const {
+    uint64_t degree = 0ul;
+
+    traverseEdges([&](Halfedge*) { ++degree; });
+
+    return degree;
 }
 
-void Halfedge::traverseFace(std::function<void(Halfedge*)> op) {
-    Halfedge *it = this;
+void Vertex::traverseEdges(std::function<void(Halfedge*)> op) const {
+    Halfedge *it = he;
     do op(it);
-    while ((it = it->next) != this);
-}
-
-
-vector<Vertex*> Vertex::neighbors() const {
-    std::vector<Vertex*> neighborhood;
-
-    he->traverseVertex([&](Halfedge* he){ neighborhood.push_back(he->flip->v); });
-
-    return neighborhood;
+    while ((it = it->flip->next) != he);
 }
 
 void Vertex::draw() const {
@@ -110,7 +104,7 @@ void Vertex::draw() const {
 }
 
 
-v3f Edge::midpoint() const {
+f32v3 Edge::midpoint() const {
     return (he->v->pos + he->flip->v->pos) / 2.0f;
 }
 
@@ -120,22 +114,36 @@ void Edge::draw() const {
 }
 
 
-v3f Face::normal() const {
+f32v3 Face::normal() const {
     return (he->next->next->v->pos - he->v->pos).cross(he->next->next->next->v->pos - he->next->v->pos).normalize();
 }
 
-v3f Face::centroid() const {
-    size_t count = 0ul;
-    v3f sum;
+f32v3 Face::centroid() const {
+    uint64_t degree = 0ul;
+    f32v3 sum;
 
-    he->traverseFace([&](Halfedge* he){ sum += he->v->pos; ++count; });
+    traversePerimeter([&](Halfedge* he){ sum += he->v->pos; ++degree; });
 
-    return sum / count;
+    return sum / degree;
+}
+
+uint64_t Face::degree() const {
+    uint64_t degree = 0ul;
+
+    traversePerimeter([&](Halfedge*) { ++degree; });
+
+    return degree;
+}
+
+void Face::traversePerimeter(std::function<void(Halfedge*)> op) const {
+    Halfedge *it = he;
+    do op(it);
+    while ((it = it->next) != he);
 }
 
 void Face::draw() const {
-    const v3f n = normal();
+    const f32v3 n = normal();
     glNormal3fv(&n.x);
 
-    he->traverseFace([](Halfedge* he){ he->v->draw(); });
+    traversePerimeter([](Halfedge* he){ he->v->draw(); });
 }

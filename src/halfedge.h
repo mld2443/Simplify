@@ -2,7 +2,6 @@
 
 #include "simd.h"
 
-#include <vector>
 #include <functional>
 #include <cstdint>
 
@@ -18,16 +17,15 @@ struct Halfedge {
     Face *f;
 
     uint64_t collapse();
-
-    void traverseVertex(std::function<void(Halfedge*)> op);
-    void traverseFace(std::function<void(Halfedge*)> op);
 };
 
 struct Vertex {
     Halfedge *he;
-    v3f pos;
+    f32v3 pos;
 
-    std::vector<Vertex*> neighbors() const;
+    uint64_t degree() const;
+
+    void traverseEdges(std::function<void(Halfedge*)> op) const;
 
     void draw() const;
 };
@@ -36,7 +34,7 @@ struct Edge {
     Halfedge *he;
     bool dirty, unsafe;
 
-    v3f midpoint() const;
+    f32v3 midpoint() const;
 
     void draw() const;
 };
@@ -44,8 +42,11 @@ struct Edge {
 struct Face {
     Halfedge *he;
 
-    v3f normal() const;
-    v3f centroid() const;
+    f32v3 normal() const;
+    f32v3 centroid() const;
+    uint64_t degree() const;
+
+    void traversePerimeter(std::function<void(Halfedge*)> op) const;
 
     void draw() const;
 };

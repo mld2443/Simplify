@@ -1,9 +1,5 @@
 #include "manifold.h"
 
-#ifdef DEBUG
-#include <iostream>  // cout, oct, endl
-#endif
-
 #include <GL/gl.h>   // glBegin, glEnd, glMaterialfv, GL_*
 #include <algorithm> // sort, set_intersection
 #include <queue>     // priority_queue
@@ -42,7 +38,7 @@ float Manifold<VertexType>::AABB::Dimension::centroid() const {
 }
 
 template <class VertexType>
-void Manifold<VertexType>::AABB::addSample(const v3f& v) {
+void Manifold<VertexType>::AABB::addSample(const f32v3& v) {
     x.addSample(v.x);
     y.addSample(v.y);
     z.addSample(v.z);
@@ -112,11 +108,13 @@ void Manifold<VertexType>::verify() {
         if (face.he) {
             if (face.he->f == nullptr)
                 result |= 1u<<1u;
+#if 0
             // Test for triangleness
             if (face.he->next->next->next != face.he)
                 result |= 1u<<2u;
             if (face.he->prev->prev->prev != face.he)
                 result |= 1u<<3u;
+#endif
         }
     }
     for (const auto &edge : m_edges) {
@@ -138,8 +136,9 @@ void Manifold<VertexType>::verify() {
         }
     }
 
+    // Probably catastrophic enough to just throw it
     if (result)
-        cout << "ERROR, CODE " << oct << result << endl;
+        throw result;
 }
 #endif
 
@@ -164,7 +163,7 @@ Manifold<VertexType>::Manifold(const char* objfile, bool invert) {
         }
         // Process vertices, discard normals
         else if (token[0] == 'v' && token[1] != 'n') {
-            v3f p;
+            f32v3 p;
             file >> p;
 
             m_bounds.addSample(p);
@@ -204,12 +203,12 @@ Manifold<VertexType>::Manifold(const char* objfile, bool invert) {
 }
 
 template <class VertexType>
-v3f Manifold<VertexType>::getAABBSizes() const {
+f32v3 Manifold<VertexType>::getAABBSizes() const {
     return { m_bounds.x.delta(), m_bounds.y.delta(), m_bounds.z.delta() };
 }
 
 template <class VertexType>
-v3f Manifold<VertexType>::getAABBCentroid() const {
+f32v3 Manifold<VertexType>::getAABBCentroid() const {
     return { m_bounds.x.centroid(), m_bounds.y.centroid(), m_bounds.z.centroid() };
 }
 
