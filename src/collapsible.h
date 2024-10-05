@@ -11,7 +11,7 @@ private:
     static float getCombinedError(const Edge* e);
 
     bool checkSafety(const Edge *e) const;
-    void collapse(Edge *e);
+    Vertex* collapse(Edge *e);
 
 public:
     Collapsible(const char* objfile, bool invert = false);

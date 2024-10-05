@@ -17,8 +17,8 @@ using namespace std;
 QuadraticErrorFunction::QuadraticErrorFunction(float n, const v3f& Sv, float Svtv): n(n), Sv(Sv), Svtv(Svtv) {
 }
 
-QuadraticErrorFunction::QuadraticErrorFunction(Halfedge* he): QuadraticErrorFunction() {
-    he->traverseVertex([&](Halfedge* it){
+QuadraticErrorFunction::QuadraticErrorFunction(Halfedge* he) : QuadraticErrorFunction() {
+    he->traverseVertex([&](Halfedge* it) {
         ++n;
         Sv += it->flip->v->pos;
         Svtv += it->flip->v->pos.dot(it->flip->v->pos);
@@ -34,6 +34,7 @@ QuadraticErrorFunction QuadraticErrorFunction::operator+(const QuadraticErrorFun
 }
 
 
+// Cannot be part of the constructor because the vertices are made before all other components
 void QEFVertex::calcQEF() {
     qef = { he };
 }
@@ -73,13 +74,17 @@ bool Collapsible::checkSafety(const Edge *e) const {
     return false;
 }
 
-void Collapsible::collapse(Edge *e) {
+Vertex* Collapsible::collapse(Edge *e) {
     auto qef(getQEF(e->he->v) + getQEF(e->he->flip->v));
-    e->he->v->pos = getNewPoint(e);
-    m_countDeletedFaces += (unsigned long)e->collapse();
 
-    getQEF(e->he->v) = qef;
-    e->he->v->markEdges();
+    Vertex *combined = e->he->v;
+    combined->pos = getNewPoint(e);
+
+    m_countDeletedFaces += e->he->collapse();
+
+    getQEF(combined) = qef;
+
+    return combined;
 }
 
 
@@ -100,16 +105,13 @@ void Collapsible::simplify(const size_t count) {
         EdgeWithError(Edge* e): e(e), error(getCombinedError(e)) {}
         EdgeWithError(const EdgeWithError& e) = default;
 
-        bool dirty() const { return e->dirty; }
-        bool valid() const { return e->valid; }
-
         auto operator<=>(const EdgeWithError& e) const { return error <=> e.error; }
     };
 
     // Populate the priority queue
-    std::priority_queue<EdgeWithError, std::vector<EdgeWithError>, std::greater<EdgeWithError>> errors;
+    priority_queue<EdgeWithError, vector<EdgeWithError>, greater<EdgeWithError>> errors;
     for (auto &e : m_edges) {
-        errors.push({ &e });
+        errors.emplace(&e);
     }
 
     // The heart of the algorithm
@@ -117,33 +119,29 @@ void Collapsible::simplify(const size_t count) {
         if (errors.empty()) { // No more safe edges! Panic!
             break;
         } else {
-            auto elem = errors.top();
-            if (elem.dirty()) {
-                // Error has been increase, recalculate it
-                errors.pop();
-                elem.e->dirty = false;
-                errors.push({ elem.e });
-            } else {
-                if (!elem.valid()) { // invalid?
-                    errors.pop();
-                } else {
-                    if (!checkSafety(elem.e)) { //unsafe edge
-                        errors.top().e->unsafe = true;
-                        errors.pop();
-                    } else { // Collapse it!
-                        collapse(elem.e);
+            Edge *top = errors.top().e;
 
-                        auto v = elem.e->he->v;
-                        Halfedge *trav = v->he;
-                        do {
-                            if (trav->e->unsafe) {
-                                trav->e->unsafe = false;
-                                errors.push({ trav->e });
-                            }
-                            trav = trav->flip->next;
-                        } while(trav != v->he);
+            if (top->he == nullptr) { // invalid?
+                errors.pop();
+            } else if (top->dirty) {
+                // Error has been increased, recalculate it
+                errors.pop();
+                top->dirty = false;
+                errors.emplace(top);
+            } else if (!checkSafety(top)) {
+                // Unsafe edge, remove it and add it back if a neighbor collapses
+                top->unsafe = true;
+                errors.pop();
+            } else { // Collapse it!
+                auto v = collapse(top);
+
+                v->he->traverseVertex([&](Halfedge* he) {
+                    he->e->dirty = true;
+                    if (he->e->unsafe) {
+                        he->e->unsafe = false;
+                        errors.emplace(he->e);
                     }
-                }
+                });
             }
         }
     }
@@ -151,4 +149,9 @@ void Collapsible::simplify(const size_t count) {
 #ifndef NDEBUG
     verify();
 #endif
+
+    m_vertices.remove_if(invalid());
+    m_faces.remove_if(invalid());
+    m_edges.remove_if(invalid());
+    m_halfedges.remove_if(invalid());
 }

@@ -24,7 +24,6 @@ private:
         void addSample(const v3f& v);
     };
 
-    Vertex* addPoint(v3f& p);
     void addFace(const std::list<Vertex*>& verts);
 
 protected:

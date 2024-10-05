@@ -4,7 +4,7 @@
 #include <iostream>  // cout, oct, endl
 #endif
 
-#include <GL/glut.h> // glBegin, glEnd, glMaterialfv, GL_*
+#include <GL/gl.h>   // glBegin, glEnd, glMaterialfv, GL_*
 #include <algorithm> // sort, set_intersection
 #include <queue>     // priority_queue
 #include <fstream>   // ifstream
@@ -54,12 +54,6 @@ void Manifold<VertexType>::AABB::addSample(const v3f& v) {
 //////////////
 // PRIVATE FUNCTIONS
 
-template <class VertexType>
-Vertex* Manifold<VertexType>::addPoint(v3f& p) {
-    m_vertices.push_back(VertexType{ nullptr, p, true });
-    return &m_vertices.back();
-}
-
 using edgeHashType = map<pair<const Vertex*, const Vertex*>, Edge*>;
 static edgeHashType *p_edgeHash = nullptr;
 
@@ -71,12 +65,12 @@ void Manifold<VertexType>::addFace(const list<Vertex*>& verts) {
         if (auto result = p_edgeHash->find(key); result != p_edgeHash->end())
             return result->second;
 
-        m_edges.push_back({ nullptr, false, false, true });
+        m_edges.emplace_back(nullptr, false, false);
 
         return (*p_edgeHash)[key] = &m_edges.back();
     };
 
-    m_faces.push_back({ nullptr, true });
+    m_faces.emplace_back(nullptr);
 
     Halfedge *first = nullptr, *prev = nullptr;
 
@@ -87,7 +81,7 @@ void Manifold<VertexType>::addFace(const list<Vertex*>& verts) {
 
         Edge *e = lookupEdge(*it, *next);
 
-        m_halfedges.push_back({ nullptr, prev, e->he, *it, e, &m_faces.back(), true });
+        m_halfedges.emplace_back(nullptr, prev, e->he, *it, e, &m_faces.back());
         if (it != verts.begin())
             prev->next = &m_halfedges.back();
 
@@ -95,7 +89,7 @@ void Manifold<VertexType>::addFace(const list<Vertex*>& verts) {
             e->he->flip = &m_halfedges.back();
 
         e->he = prev = &m_halfedges.back();
-        if (it == verts.begin())
+        if (!first)
             first = prev;
 
         prev->v->he = prev;
@@ -108,45 +102,39 @@ void Manifold<VertexType>::addFace(const list<Vertex*>& verts) {
 #ifndef NDEBUG
 template <class VertexType>
 void Manifold<VertexType>::verify() {
-    m_vertices.remove_if(invalid());
-    m_faces.remove_if(invalid());
-    m_edges.remove_if(invalid());
-    m_halfedges.remove_if(invalid());
-
     unsigned result = 0;
 
-    for (auto &v : m_vertices) {
-        if (v.valid) {
-            if (!v.he->valid)
+    for (const auto &vertex : m_vertices)
+        if (vertex.he && vertex.he->f == nullptr)
                 result |= 1u<<0u;
-        }
-    }
-    for (auto &f : m_faces) {
-        if (f.valid) {
-            if (!f.he->valid)
+
+    for (const auto &face : m_faces) {
+        if (face.he) {
+            if (face.he->f == nullptr)
                 result |= 1u<<1u;
-            if (f.he->next->next->next != f.he)
+            // Test for triangleness
+            if (face.he->next->next->next != face.he)
                 result |= 1u<<2u;
-            if (f.he->prev->prev->prev != f.he)
+            if (face.he->prev->prev->prev != face.he)
                 result |= 1u<<3u;
         }
     }
-    for (auto &h : m_halfedges) {
-        if (h.valid) {
-            if (!h.v->valid)
-                result |= 1u<<4u;
-            if (!h.e->valid)
-                result |= 1u<<5u;
-            if (!h.f->valid)
-                result |= 1u<<6u;
-            if (&h != h.flip->flip)
-                result |= 1u<<7u;
+    for (const auto &edge : m_edges) {
+        if (edge.he) {
+            if (edge.he->f == nullptr)
+                result |= 1u<<8u;
         }
     }
-    for (auto &e : m_edges) {
-        if (e.valid) {
-            if (!e.he->valid)
-                result |= 1u<<8u;
+    for (const auto &halfedge : m_halfedges) {
+        if (halfedge.f) {
+            if (halfedge.v->he == nullptr)
+                result |= 1u<<4u;
+            if (halfedge.e->he == nullptr)
+                result |= 1u<<5u;
+            if (halfedge.f->he == nullptr)
+                result |= 1u<<6u;
+            if (&halfedge != halfedge.flip->flip)
+                result |= 1u<<7u;
         }
     }
 
@@ -181,7 +169,8 @@ Manifold<VertexType>::Manifold(const char* objfile, bool invert) {
 
             m_bounds.addSample(p);
 
-            v_pointers.push_back(addPoint(p));
+            m_vertices.push_back({ nullptr, p });
+            v_pointers.push_back(&m_vertices.back());
         }
         // Process faces
         else if (token[0] == 'f') {
@@ -191,8 +180,8 @@ Manifold<VertexType>::Manifold(const char* objfile, bool invert) {
                 string vnum;
                 file >> vnum >> ws;
 
-                // Again, discard indices to normals
-                if (size_t found = vnum.find("//"); found != string::npos)
+                // Again, discard indices to textures and normals
+                if (size_t found = vnum.find("/"); found != string::npos)
                     vnum = vnum.substr(0, found);
 
                 // Some models may be inside out

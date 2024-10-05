@@ -17,6 +17,7 @@ struct QuadraticErrorFunction {
     QuadraticErrorFunction operator+(const QuadraticErrorFunction& qef) const;
 };
 
+
 struct QEFVertex : public Vertex {
     QuadraticErrorFunction qef;
 

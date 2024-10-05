@@ -4,6 +4,7 @@
 
 #include <vector>
 #include <functional>
+#include <cstdint>
 
 
 struct Vertex;
@@ -15,9 +16,8 @@ struct Halfedge {
     Vertex *v;
     Edge *e;
     Face *f;
-    bool valid;
 
-    size_t collapse();
+    uint64_t collapse();
 
     void traverseVertex(std::function<void(Halfedge*)> op);
     void traverseFace(std::function<void(Halfedge*)> op);
@@ -26,22 +26,15 @@ struct Halfedge {
 struct Vertex {
     Halfedge *he;
     v3f pos;
-    bool valid;
 
     std::vector<Vertex*> neighbors() const;
-
-    void update(Vertex* v);
-
-    void markEdges();
 
     void draw() const;
 };
 
 struct Edge {
     Halfedge *he;
-    bool dirty, unsafe, valid;
-
-    size_t collapse();
+    bool dirty, unsafe;
 
     v3f midpoint() const;
 
@@ -50,7 +43,6 @@ struct Edge {
 
 struct Face {
     Halfedge *he;
-    bool valid;
 
     v3f normal() const;
     v3f centroid() const;
@@ -59,8 +51,8 @@ struct Face {
 };
 
 struct invalid {
-    bool operator() (const Halfedge& h) { return !h.valid; }
-    bool operator() (const Vertex& v) { return !v.valid; }
-    bool operator() (const Edge& e) { return !e.valid; }
-    bool operator() (const Face& f) { return !f.valid; }
+    bool operator() (const Halfedge& h) { return h.f==nullptr; }
+    bool operator() (const Vertex& v) { return v.he==nullptr; }
+    bool operator() (const Edge& e) { return e.he==nullptr; }
+    bool operator() (const Face& f) { return f.he==nullptr; }
 };

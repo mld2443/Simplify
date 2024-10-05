@@ -5,8 +5,8 @@
 #include <cstdlib>       // atoi
 
 
-int WINDOW_WIDTH = 1440, WINDOW_HEIGHT = 900;
-int g_window = 0;
+int g_windowWidth = 1440, g_windowHeight = 900;
+int g_windowHandle = 0;
 bool g_simplified = false;
 unsigned g_target = 0u;
 const char *g_fileName;
@@ -26,17 +26,26 @@ float g_modelView[16] = { 1, 0, 0, 0,
 float g_focus[3] = { 0, 0, 0 };
 
 
-static void setPerspective(float fovx, float aspect, float znear, float zfar) {
+static void setPerspective(float fovx, float aspect, float near, float far) {
     constexpr float PI_360 = 3.1415926535897932 / 360.0;
-    const float xmax = znear * std::tan(fovx * PI_360);
-    const float ymax = xmax / aspect;
-    const float zclip = -(zfar + znear) / (zfar - znear);
-    const float shear = (-2.0f * znear * zfar) / (zfar - znear);
+    const float xmax = near * std::tan(fovx * PI_360),
+                ymax = xmax / aspect,
+                clip = -(far + near) / (far - near),
+                div = (-2.0f * near * far) / (far - near);
 
-    float matrix[16] = { znear/xmax, 0.0f,       0.0f,  0.0f,
-                         0.0f,       znear/ymax, 0.0f,  0.0f,
-                         0.0f,       0.0f,       zclip, -1.0f,
-                         0.0f,       0.0f,       shear, 0.0f };
+    const float matrix[16] = { near/xmax, 0.0f,      0.0f, 0.0f,
+                               0.0f,      near/ymax, 0.0f, 0.0f,
+                               0.0f,      0.0f,      clip, -1.0f,
+                               0.0f,      0.0f,      div,  0.0f };
+
+    glMultMatrixf(matrix);
+}
+
+static void setOrthographic(float xmin, float ymin, float xmax, float ymax, float near = -1.0f, float far = 1.0f) {
+    const float matrix[] = { 2.0f/(xmax - xmin), 0.0f,               0.0f,              (xmin + xmax)/(xmin - xmax),
+                             0.0f,               2.0f/(ymax - ymin), 0.0f,              (ymin + ymax)/(ymin - ymax),
+                             0.0f,               0.0f,               2.0f/(near - far), (near + far)/(near - far),
+                             0.0f,               0.0f,               0.0f,              1.0f };
 
     glMultMatrixf(matrix);
 }
@@ -60,36 +69,40 @@ static void resetViewMatrix() {
 static void display() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    // Set up viewing matrices
+    { // Set up scene
+        glEnable(GL_DEPTH);
+        glEnable(GL_DEPTH_TEST);
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    setPerspective(85.0f, double(WINDOW_WIDTH)/double(WINDOW_HEIGHT), 0.0001, 100.0);
+        setPerspective(85.0f, double(g_windowWidth)/double(g_windowHeight), 0.0001, 100.0);
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 
-    //Camera
     glTranslatef(g_focus[0], g_focus[1], g_focus[2]);
     glMultMatrixf(g_modelView);
 
+        // Models
     if (g_showVertices)
         g_shape->drawVertices();
     if (g_showEdges)
         g_shape->drawEdges();
     if (g_showFaces)
         g_shape->drawFaces();
+    }
 
+    // Submit
     glFlush();
     glutSwapBuffers();
 }
 
 static void reshape(int width, int height) {
     glViewport(0, 0, width, height);
-    WINDOW_WIDTH = width;
-    WINDOW_HEIGHT = height;
+    g_windowWidth = width;
+    g_windowHeight = height;
 }
 
 static void mouse(int button, int state, int x, int y) {
-    y = WINDOW_HEIGHT - y;
+    y = g_windowHeight - y;
 
     // Mouse state that should always be stored on pressing
     if (state == GLUT_DOWN) {
@@ -109,7 +122,7 @@ static void mouse(int button, int state, int x, int y) {
 }
 
 static void motion(int x, int y) {
-    y = WINDOW_HEIGHT - y;
+    y = g_windowHeight - y;
 
     const float dx = (x - g_prevX);
     const float dy = (y - g_prevY);
@@ -186,7 +199,7 @@ static void keyboard(unsigned char key, int x, int y) {
         return;
 
     case 27: //escape
-        glutDestroyWindow(g_window);
+        glutDestroyWindow(g_windowHandle);
         return;
 
     default:
@@ -236,13 +249,13 @@ int main(int argc, char **argv) {
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA | GLUT_DEPTH);
     glutInitWindowPosition(0, 0);
-    glutInitWindowSize(WINDOW_WIDTH, WINDOW_HEIGHT);
-    g_window = glutCreateWindow("Manifold Surface Simplifier");
+    glutInitWindowSize(g_windowWidth, g_windowHeight);
+    g_windowHandle = glutCreateWindow("Manifold Surface Simplifier");
 
     // Set up our openGL specific parameters
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
+    glViewport(0, 0, g_windowWidth, g_windowHeight);
 
     glClearColor(0, 0, 0, 1);
     glEnable(GL_DEPTH_TEST);
