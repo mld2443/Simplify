@@ -1,12 +1,8 @@
 #include "collapsible.h"
 
 #include <iostream>  // cout, endl
-#include <algorithm> // sort, set_intersection
 #include <queue>     // priority_queue
-#include <fstream>   // ifstream
-#include <string>    // string, getline
-#include <cctype>    // isdigit
-#include <limits>    // numeric_limits::min, max
+
 
 using namespace std;
 

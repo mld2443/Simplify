@@ -1,8 +1,6 @@
 #include "manifold.h"
 
 #include <GL/gl.h>   // glBegin, glEnd, glMaterialfv, GL_*
-#include <algorithm> // sort, set_intersection
-#include <queue>     // priority_queue
 #include <fstream>   // ifstream
 #include <string>    // string, getline
 #include <cctype>    // isdigit
