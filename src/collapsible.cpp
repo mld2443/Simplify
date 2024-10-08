@@ -1,8 +1,8 @@
 #include "collapsible.h"
 
-#include <iostream>  // cout, endl
-#include <queue>     // priority_queue
-
+#include <iostream> // cout, endl
+#include <queue>    // priority_queue, greater
+#include <set>      // set
 
 using namespace std;
 
@@ -55,11 +55,17 @@ float Collapsible::getCombinedError(const Edge* e) {
 // PRIVATE FUNCTIONS
 
 bool Collapsible::checkSafety(const Edge *e) {
-    // Check for triangles with opposite valence 3 vertices, these are unsafe to collapse
-    if (e->he->f->isTriangle() && e->he->prev->v->isValence3())
-        return false;
-    if (e->he->flip->f->isTriangle() && e->he->flip->prev->v->isValence3())
-        return false;
+    set<Vertex*> neighbors;
+
+    // Add neighborhood of vertices on one side of the prospective edge, minus the vertices touching these faces
+    for (Halfedge *it = e->he->flip->next->flip->next; it != e->he->prev->flip; it = it->flip->next)
+        neighbors.insert(it->flip->v);
+
+    // Check the neighborhood on the other side for any matches
+    for (Halfedge *it = e->he->next->flip->next; it != e->he->flip->prev->flip; it = it->flip->next)
+        if (neighbors.contains(it->flip->v))
+            return false;
+
     return true;
 }
 
@@ -105,38 +111,29 @@ void Collapsible::simplify(uint64_t finalCount) {
 
     // The heart of the algorithm
     const uint64_t delta = m_faces.size() - finalCount;
-    // const uint64_t gradations = 100;
-    // uint64_t reported = 0ul;
-    while (m_removedCount < delta) {
-        if (errors.empty()) {
-            // No more safe edges! Panic!
-            break;
-        } else {
-            Edge *top = errors.top().e;
+    while (m_removedCount < delta && !errors.empty()) {
+        Edge *top = errors.top().e;
+        errors.pop();
 
-            if (!*top) {
-                // This edge has been deleted during a collapse, remove it from queue
-                errors.pop();
-            } else if (top->dirty) {
-                // Error has been increased, recalculate it
-                errors.pop();
-                top->dirty = false;
-                errors.emplace(top);
-            } else if (!checkSafety(top)) {
-                // Unsafe edge, remove it, but we'll add it back if a neighbor collapses
-                top->unsafe = true;
-                errors.pop();
-            } else { // Collapse it!
-                auto v = collapse(top);
+        if (top->invalid()) {
+            // This edge has been deleted during a collapse, remove it from queue
+        } else if (top->dirty) {
+            // Error has been increased, recalculate it
+            top->dirty = false;
+            errors.emplace(top);
+        } else if (!checkSafety(top)) {
+            // Unsafe edge, remove it, but we'll add it back if a neighbor collapses
+            top->unsafe = true;
+        } else { // Collapse it!
+            auto v = collapse(top);
 
-                v->traverseEdges([&](Halfedge* he) {
-                    he->e->dirty = true;
-                    if (he->e->unsafe) {
-                        he->e->unsafe = false;
-                        errors.emplace(he->e);
-                    }
-                });
-            }
+            v->traverseEdges([&](Halfedge* he) {
+                he->e->dirty = true;
+                if (he->e->unsafe) {
+                    he->e->unsafe = false;
+                    errors.emplace(he->e);
+                }
+            });
         }
     }
 
@@ -146,10 +143,10 @@ void Collapsible::simplify(uint64_t finalCount) {
 
     cout << "Sizes: " << m_vertices.size() << " vertices, " << m_faces.size() << " faces, " << m_edges.size() << " edges, " << m_halfedges.size() << " halfedges" << endl;
 
-    const size_t rV = m_vertices.remove_if([](auto& v){ return !v; });
-    const size_t rF = m_faces.remove_if([](auto& f){ return !f; });
-    const size_t rE = m_edges.remove_if([](auto& e){ return !e; });
-    const size_t rH = m_halfedges.remove_if([](auto& he){ return !he; });
+    const size_t rV = m_vertices.remove_if([](auto& v){ return v.invalid(); });
+    const size_t rF = m_faces.remove_if([](auto& f){ return f.invalid(); });
+    const size_t rE = m_edges.remove_if([](auto& e){ return e.invalid(); });
+    const size_t rH = m_halfedges.remove_if([](auto& he){ return he.invalid(); });
 
     cout << "Removed: " << rV << " vertices, " << rF << " faces, " << rE << " edges, " << rH << " halfedges" << endl;
     cout << "Remaining: " << m_vertices.size() << " vertices, " << m_faces.size() << " faces, " << m_edges.size() << " edges, " << m_halfedges.size() << " halfedges" << endl;

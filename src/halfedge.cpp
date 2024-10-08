@@ -13,15 +13,15 @@ static bool surgicalRemoval(Halfedge* he) {
         he->prev->e->he = he->prev->flip;
         he->next->flip->e = he->prev->e;
 
-        // Ensure the outside point points to removed halfedge
+        // Ensure the outside point points to a valid halfedge
         he->prev->v->he = he->next->flip;
 
         // Mark all these for removal
-        he->next->e->he = nullptr;
-        he->prev->f = nullptr;
-        he->next->f = nullptr;
-        he->f->he = nullptr;
-        he->f = nullptr;
+        he->next->e->invalidate();
+        he->prev->invalidate();
+        he->next->invalidate();
+        he->f->invalidate();
+        he->invalidate();
 
         return true;
     } else { // More than 3 sides, just a little housekeeping
@@ -33,7 +33,7 @@ static bool surgicalRemoval(Halfedge* he) {
         he->next->prev = he->prev;
 
         // Still marks the halfedge to be removed
-        he->f = nullptr;
+        he->invalidate();
 
         return false;
     }
@@ -55,19 +55,27 @@ uint64_t Halfedge::collapse() {
         condemned->he = nullptr;
     }
 
+    // Mark the edge for removal
+    e->invalidate();
+
+    // Remove everything else very carefully
     deletedFaces += surgicalRemoval(flip);
     deletedFaces += surgicalRemoval(this);
-
-    // Mark the edge for removal
-    e->he = nullptr;
 
     return deletedFaces;
 }
 
-
-bool Vertex::isValence3() const {
-    return he->flip->next->flip->next->flip->next == he;
+void Halfedge::invalidate() {
+    next = prev = flip = nullptr;
+    v = nullptr;
+    e = nullptr;
+    f = nullptr;
 }
+
+bool Halfedge::invalid() const {
+    return f == nullptr;
+}
+
 
 void Vertex::traverseEdges(std::function<void(Halfedge*)> op) const {
     Halfedge *it = he;
@@ -79,6 +87,14 @@ void Vertex::draw() const {
     glVertex3fv(&pos.x);
 }
 
+void Vertex::invalidate() {
+    he = nullptr;
+}
+
+bool Vertex::invalid() const {
+    return he == nullptr;
+}
+
 
 f32v3 Edge::midpoint() const {
     return (he->v->pos + he->flip->v->pos) / 2.0f;
@@ -87,6 +103,14 @@ f32v3 Edge::midpoint() const {
 void Edge::draw() const {
     he->v->draw();
     he->flip->v->draw();
+}
+
+void Edge::invalidate() {
+    he = nullptr;
+}
+
+bool Edge::invalid() const {
+    return he == nullptr;
 }
 
 
@@ -118,4 +142,12 @@ void Face::draw() const {
     glNormal3fv(&n.x);
 
     traversePerimeter([](Halfedge* he){ he->v->draw(); });
+}
+
+void Face::invalidate() {
+    he = nullptr;
+}
+
+bool Face::invalid() const {
+    return he == nullptr;
 }

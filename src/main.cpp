@@ -19,9 +19,9 @@ bool leftPressed = false, rightPressed = false, middlePressed = false;
 
 // view state
 float modelView[16] = { 1, 0, 0, 0,
-                          0, 1, 0, 0,
-                          0, 0, 1, 0,
-                          0, 0, 0, 1 };
+                        0, 1, 0, 0,
+                        0, 0, 1, 0,
+                        0, 0, 0, 1 };
 float focus[3] = { 0, 0, 0 };
 
 

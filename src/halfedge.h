@@ -18,20 +18,20 @@ struct Halfedge {
 
     uint64_t collapse();
 
-    operator bool() const { return f != nullptr; }
+    void invalidate();
+    bool invalid() const;
 };
 
 struct Vertex {
     Halfedge *he;
     f32v3 pos;
 
-    bool isValence3() const;
-
     void traverseEdges(std::function<void(Halfedge*)> op) const;
 
     void draw() const;
 
-    operator bool() const { return he != nullptr; }
+    void invalidate();
+    bool invalid() const;
 };
 
 struct Edge {
@@ -42,7 +42,8 @@ struct Edge {
 
     void draw() const;
 
-    operator bool() const { return he != nullptr; }
+    void invalidate();
+    bool invalid() const;
 };
 
 struct Face {
@@ -56,5 +57,6 @@ struct Face {
 
     void draw() const;
 
-    operator bool() const { return he != nullptr; }
+    void invalidate();
+    bool invalid() const;
 };

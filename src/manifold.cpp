@@ -97,7 +97,7 @@ void Manifold<VertexType>::addFace(const list<Vertex*>& verts) {
 template <class VertexType>
 void Manifold<VertexType>::verifyConnections() {
     for (const auto &halfedge : m_halfedges) {
-        if (halfedge) {
+        if (!halfedge.invalid()) {
             if (halfedge.v->he == nullptr)
                 throw 1u<<0u;
             if (halfedge.e->he == nullptr)
@@ -110,15 +110,15 @@ void Manifold<VertexType>::verifyConnections() {
     }
 
     for (const auto &vertex : m_vertices)
-        if (vertex && vertex.he->v != &vertex)
+        if (!vertex.invalid() && vertex.he->v != &vertex)
                 throw 1u<<4u;
 
     for (const auto &edge : m_edges)
-        if (edge && edge.he->e != &edge)
+        if (!edge.invalid() && edge.he->e != &edge)
                 throw 1u<<5u;
 
     for (const auto &face : m_faces) {
-        if (face) {
+        if (!face.invalid()) {
             if (face.he->f != &face)
                 throw 1u<<6u;
             if (m_trianglesOnly) {
@@ -201,26 +201,26 @@ f32v3 Manifold<VertexType>::getAABBCentroid() const {
 
 template <class VertexType>
 void Manifold<VertexType>::drawFaces() const {
-    static const GLfloat white[] = { 1.0f, 1.0f, 1.0f };
-    glEnable(GL_LIGHTING);
-    glMaterialfv(GL_FRONT, GL_AMBIENT, white);
-
     list<const Face*> nonTris;
 
     // Should be faster
+    static const GLfloat white[] = { 1.0f, 1.0f, 1.0f };
+    glEnable(GL_LIGHTING);
+    glMaterialfv(GL_FRONT, GL_AMBIENT, white);
     glBegin(GL_TRIANGLES); {
-        for (const auto &f : m_faces)
-        if (m_trianglesOnly || f.isTriangle())
-            f.draw();
-        else
-            nonTris.push_back(&f);
+        for (const auto &face : m_faces)
+            if (m_trianglesOnly || face.isTriangle())
+                face.draw();
+            else
+                nonTris.push_back(&face);
     } glEnd();
 
+    // Slower but draws degree 4+ polys correctly
     static const GLfloat blue[] = { 0.6f, 0.6f, 1.0f };
     glMaterialfv(GL_FRONT, GL_AMBIENT, blue);
-    for (const auto *f : nonTris) {
+    for (const auto *face : nonTris) {
         glBegin(GL_POLYGON); {
-            f->draw();
+            face->draw();
         } glEnd();
     }
 }
@@ -231,8 +231,8 @@ void Manifold<VertexType>::drawEdges() const {
     glDisable(GL_LIGHTING);
     glColor4fv(yellow);
     glBegin(GL_LINES); {
-        for (const auto &e : m_edges)
-            e.draw();
+        for (const auto &edge : m_edges)
+            edge.draw();
     } glEnd();
 }
 
@@ -242,8 +242,8 @@ void Manifold<VertexType>::drawVertices() const {
     glDisable(GL_LIGHTING);
     glColor4fv(red);
     glBegin(GL_POINTS); {
-        for (const auto &v : m_vertices)
-            v.draw();
+        for (const auto &vertex : m_vertices)
+            vertex.draw();
     } glEnd();
 }
 
