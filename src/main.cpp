@@ -1,7 +1,7 @@
 #include "collapsible.h"
 
-#include <GL/freeglut.h> // glut*, gl*
 #include <cmath>         // tan
+#include <GL/freeglut.h> // glut*, gl*
 
 
 int windowWidth = 1440, windowHeight = 900;
@@ -111,11 +111,9 @@ static void mouse(int button, int state, int x, int y) {
 
     if (button == GLUT_LEFT_BUTTON) {
         ::leftPressed = state == GLUT_DOWN;
-    }
-    else if (button == GLUT_RIGHT_BUTTON) {
+    } else if (button == GLUT_RIGHT_BUTTON) {
         ::rightPressed = state == GLUT_DOWN;
-    }
-    else if (button == GLUT_MIDDLE_BUTTON) {
+    } else if (button == GLUT_MIDDLE_BUTTON) {
         ::middlePressed = state == GLUT_DOWN;
     }
 }
@@ -130,15 +128,15 @@ static void motion(int x, int y) {
     if (::leftPressed) {
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
-        glRotatef(dx, 0, 1, 0);
-        glRotatef(dy, -1, 0, 0);
+        glRotatef(dx,  0.0f, 1.0f, 0.0f);
+        glRotatef(dy, -1.0f, 0.0f, 0.0f);
         glMultMatrixf(::modelView);
         glGetFloatv(GL_MODELVIEW_MATRIX, ::modelView);
     } else if (::middlePressed) {
-        ::focus[0] += 0.005 * dx;
-        ::focus[1] += 0.005 * dy;
+        ::focus[0] += 0.005f * dx;
+        ::focus[1] += 0.005f * dy;
     } else if (::rightPressed) {
-        ::focus[2] += 0.01 * dy;
+        ::focus[2] += 0.01f * dy;
     }
 
     // Store previous mouse positions
@@ -241,7 +239,7 @@ int main(int argc, char **argv) {
     // Load the model
     ::fileName = "...";
     ::shape = new Collapsible(::fileName);
-    ::target = 800u;
+    ::target = 2'000u;
 
     // Prepare the window
     glutInit(&argc, argv);

@@ -1,12 +1,12 @@
 #include "manifold.h"
 
-#include <GL/gl.h>   // glBegin, glEnd, glMaterialfv, GL_*
-#include <fstream>   // ifstream
-#include <string>    // string, getline
 #include <cctype>    // isdigit
+#include <fstream>   // ifstream
+#include <GL/gl.h>   // glBegin, glEnd, glMaterialfv, GL_*
+#include <iterator>  // next
 #include <limits>    // numeric_limits::min, max
 #include <map>       // map
-#include <iterator>  // next
+#include <string>    // string, getline
 
 using namespace std;
 

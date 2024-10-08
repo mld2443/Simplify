@@ -2,7 +2,7 @@
 
 #include "halfedge.h"
 
-#include <list>
+#include <list> // list
 
 
 template <class VertexType = Vertex>

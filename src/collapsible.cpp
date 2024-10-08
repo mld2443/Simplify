@@ -147,13 +147,8 @@ void Collapsible::simplify(uint64_t finalCount) {
     verifyConnections();
 #endif
 
-    cout << "Sizes: " << m_vertices.size() << " vertices, " << m_faces.size() << " faces, " << m_edges.size() << " edges, " << m_halfedges.size() << " halfedges" << endl;
-
     const size_t rV = m_vertices.remove_if([](auto& v){ return v.invalid(); });
     const size_t rF = m_faces.remove_if([](auto& f){ return f.invalid(); });
     const size_t rE = m_edges.remove_if([](auto& e){ return e.invalid(); });
     const size_t rH = m_halfedges.remove_if([](auto& he){ return he.invalid(); });
-
-    cout << "Removed: " << rV << " vertices, " << rF << " faces, " << rE << " edges, " << rH << " halfedges" << endl;
-    cout << "Remaining: " << m_vertices.size() << " vertices, " << m_faces.size() << " faces, " << m_edges.size() << " edges, " << m_halfedges.size() << " halfedges" << endl;
 }

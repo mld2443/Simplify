@@ -1,8 +1,8 @@
 #pragma once
 
+#include <algorithm> // max
 #include <cmath>     // sqrt
 #include <iostream>  // istream, ostream
-#include <algorithm> // max
 
 
 template <typename T>

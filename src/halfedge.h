@@ -2,8 +2,8 @@
 
 #include "simd.h"
 
-#include <functional>
-#include <cstdint>
+#include <cstdint>    // uint64_t
+#include <functional> // function
 
 
 struct Vertex;
