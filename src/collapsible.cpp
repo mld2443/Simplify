@@ -55,18 +55,24 @@ float Collapsible::getCombinedError(const Edge* e) {
 // PRIVATE FUNCTIONS
 
 bool Collapsible::checkSafety(const Edge *e) {
+    // Compute neighborhood of vertices touching one side of prospective edge, less the vertices on its faces
     set<Vertex*> neighbors;
+    bool hasOtherNeighbors = false;
 
-    // Add neighborhood of vertices on one side of the prospective edge, minus the vertices touching these faces
-    for (Halfedge *it = e->he->flip->next->flip->next; it != e->he->prev->flip; it = it->flip->next)
+    for (Halfedge *it = e->he->flip->next->flip->next; it != e->he->prev->flip; it = it->flip->next) {
         neighbors.insert(it->flip->v);
+        hasOtherNeighbors = true;
+    }
 
     // Check the neighborhood on the other side for any matches
-    for (Halfedge *it = e->he->next->flip->next; it != e->he->flip->prev->flip; it = it->flip->next)
+    for (Halfedge *it = e->he->next->flip->next; it != e->he->flip->prev->flip; it = it->flip->next) {
         if (neighbors.contains(it->flip->v))
             return false;
+        hasOtherNeighbors = true;
+    }
 
-    return true;
+    // Allow collpase if there are neighbors, or if either side of this edge is not a triangle
+    return hasOtherNeighbors || (!e->he->f->isTriangle() || !e->he->flip->f->isTriangle());
 }
 
 Vertex* Collapsible::collapse(Edge *e) {

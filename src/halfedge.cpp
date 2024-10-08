@@ -49,10 +49,10 @@ uint64_t Halfedge::collapse() {
     {
         // While the halfedges are still connected, update the roots of the vertex to be removed
         Vertex *condemned = flip->v;
-        flip->v->traverseEdges([&](Halfedge* he){ he->v = this->v; });
+        condemned->traverseEdges([&](Halfedge* he){ he->v = this->v; });
 
         // Mark this vertex for removal, have to save it off because the above changes flip->v
-        condemned->he = nullptr;
+        condemned->invalidate();
     }
 
     // Mark the edge for removal

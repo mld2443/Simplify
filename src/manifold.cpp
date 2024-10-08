@@ -208,7 +208,7 @@ void Manifold<VertexType>::drawFaces() const {
     glEnable(GL_LIGHTING);
     glMaterialfv(GL_FRONT, GL_AMBIENT, white);
     glBegin(GL_TRIANGLES); {
-        for (const auto &face : m_faces)
+        for (const Face &face : m_faces)
             if (m_trianglesOnly || face.isTriangle())
                 face.draw();
             else
@@ -218,7 +218,7 @@ void Manifold<VertexType>::drawFaces() const {
     // Slower but draws degree 4+ polys correctly
     static const GLfloat blue[] = { 0.6f, 0.6f, 1.0f };
     glMaterialfv(GL_FRONT, GL_AMBIENT, blue);
-    for (const auto *face : nonTris) {
+    for (const Face *face : nonTris) {
         glBegin(GL_POLYGON); {
             face->draw();
         } glEnd();
@@ -231,7 +231,7 @@ void Manifold<VertexType>::drawEdges() const {
     glDisable(GL_LIGHTING);
     glColor4fv(yellow);
     glBegin(GL_LINES); {
-        for (const auto &edge : m_edges)
+        for (const Edge &edge : m_edges)
             edge.draw();
     } glEnd();
 }
@@ -242,7 +242,7 @@ void Manifold<VertexType>::drawVertices() const {
     glDisable(GL_LIGHTING);
     glColor4fv(red);
     glBegin(GL_POINTS); {
-        for (const auto &vertex : m_vertices)
+        for (const Vertex &vertex : m_vertices)
             vertex.draw();
     } glEnd();
 }
