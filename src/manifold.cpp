@@ -6,6 +6,7 @@
 #include <cctype>    // isdigit
 #include <limits>    // numeric_limits::min, max
 #include <map>       // map
+#include <iterator>  // next
 
 using namespace std;
 
@@ -46,53 +47,6 @@ void Manifold<VertexType>::AABB::addSample(const f32v3& v) {
 //////////////
 // Manifold //
 //////////////
-// PRIVATE FUNCTIONS
-
-using edgeHashType = map<pair<const Vertex*, const Vertex*>, Edge*>;
-static edgeHashType *s_edgeHash = nullptr;
-
-template <class VertexType>
-void Manifold<VertexType>::addFace(const list<Vertex*>& verts) {
-    static const auto lookupEdge = [&] (const Vertex *v1, const Vertex* v2) {
-        const auto key = pair<const Vertex*, const Vertex*>(max(v1, v2), min(v1, v2));
-
-        if (auto result = s_edgeHash->find(key); result != s_edgeHash->end())
-            return result->second;
-
-        m_edges.emplace_back(nullptr, false, false);
-
-        return (*s_edgeHash)[key] = &m_edges.back();
-    };
-
-    m_faces.emplace_back(nullptr);
-
-    Halfedge *first = nullptr, *prev = nullptr;
-
-    for (auto it = verts.begin(); it != verts.end(); ++it) {
-        auto next = it;
-        if (++next == verts.end())
-            next = verts.begin();
-
-        Edge *e = lookupEdge(*it, *next);
-
-        m_halfedges.emplace_back(nullptr, prev, e->he, *it, e, &m_faces.back());
-        if (it != verts.begin())
-            prev->next = &m_halfedges.back();
-
-        if (e->he)
-            e->he->flip = &m_halfedges.back();
-
-        e->he = prev = &m_halfedges.back();
-        if (!first)
-            first = prev;
-
-        prev->v->he = prev;
-    }
-
-    prev->next = first;
-    first->prev = m_faces.back().he = &m_halfedges.back();
-}
-
 #ifndef NDEBUG
 template <class VertexType>
 void Manifold<VertexType>::verifyConnections() {
@@ -132,13 +86,9 @@ void Manifold<VertexType>::verifyConnections() {
 }
 #endif
 
-
-// PUBLIC FUNCTIONS
-
 template <class VertexType>
 Manifold<VertexType>::Manifold(const char* objfile) : m_trianglesOnly(true) {
-    edgeHashType edgeHash;
-    s_edgeHash = &edgeHash;
+    map<pair<const Vertex*, const Vertex*>, Edge*> edgeHash;
 
     vector<Vertex*> vertexPointers;
     ifstream file(objfile);
@@ -146,12 +96,12 @@ Manifold<VertexType>::Manifold(const char* objfile) : m_trianglesOnly(true) {
 
     while (!file.eof()) {
         file >> token;
-        // Discard comments
         if (token[0] == '#') {
+            // Discard comments
             string dummy;
             getline(file, dummy);
         } else if (token[0] == 'v' && token[1] != 'n') {
-        // Process vertices, discard normals
+            // Process vertices, discard normals
             f32v3 p;
             file >> p;
 
@@ -177,12 +127,45 @@ Manifold<VertexType>::Manifold(const char* objfile) : m_trianglesOnly(true) {
             if (faceVerts.size() > 3ul)
                 m_trianglesOnly = false;
 
-            addFace(faceVerts);
+            m_faces.emplace_back(nullptr);
+            Halfedge *first = nullptr, *prev = nullptr;
+
+            for (auto index = faceVerts.begin(); index != faceVerts.end(); ++index) {
+                auto nextIndex = next(index);
+                if (nextIndex == faceVerts.end())
+                    nextIndex = faceVerts.begin();
+
+                Edge *edge = nullptr;
+                const auto key = pair<const Vertex*, const Vertex*>(max(*index, *nextIndex), min(*index, *nextIndex));
+
+                if (auto result = edgeHash.find(key); result != edgeHash.end()) {
+                    edge = result->second;
+                } else {
+                    m_edges.emplace_back(nullptr, false, false);
+                    edge = edgeHash[key] = &m_edges.back();
+                }
+
+                m_halfedges.emplace_back(nullptr, prev, edge->he, *index, edge, &m_faces.back());
+                if (index != faceVerts.begin())
+                    prev->next = &m_halfedges.back();
+
+                if (edge->he)
+                    edge->he->flip = &m_halfedges.back();
+
+                edge->he = prev = &m_halfedges.back();
+
+                if (!first)
+                    first = prev;
+
+                prev->v->he = prev;
+            }
+
+            prev->next = first;
+            first->prev = m_faces.back().he = &m_halfedges.back();
         }
     }
 
     file.close();
-    s_edgeHash = nullptr;
 
 #ifndef NDEBUG
     verifyConnections();

@@ -24,8 +24,6 @@ private:
         void addSample(const f32v3& v);
     };
 
-    void addFace(const std::list<Vertex*>& verts);
-
 protected:
 #ifndef NDEBUG
     void verifyConnections();
