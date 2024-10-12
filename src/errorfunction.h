@@ -57,10 +57,9 @@ struct QEFVertex : public Vertex {
 struct QEFEdge : public Edge {
     QEFType qef;
     f32v3 newPos;
-    float error;
     bool dirty, unsafe;
 
-    QEFEdge(nullptr_t): Edge{nullptr}, error(), dirty(), unsafe() {}
+    QEFEdge(nullptr_t): Edge{nullptr} {}
 
     void updateQEF();
     bool checkSafety() const;

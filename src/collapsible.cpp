@@ -75,7 +75,6 @@ PlaneQEF PlaneQEF::operator+(const PlaneQEF& qef) const {
 void QEFEdge::updateQEF() {
     qef = static_cast<QEFVertex*>(he->v)->qef + static_cast<QEFVertex*>(he->flip->v)->qef;
     newPos = qef.minimizeError();
-    error = qef.evaluateError(newPos);
     dirty = false;
 }
 
@@ -101,7 +100,7 @@ bool QEFEdge::checkSafety() const {
 }
 
 size_t QEFEdge::collapse() {
-    // Get the new point and calculate its position before altering the topology
+    // Get the new point and update its position and QEF before altering the topology and losing the pointer
     QEFVertex *remaining = static_cast<QEFVertex*>(he->v);
     remaining->qef = qef;
     remaining->pos = newPos;
@@ -127,8 +126,11 @@ Collapsible::Collapsible(const char* objfile)
 void Collapsible::simplify(uint64_t finalCount) {
     struct EdgeRef {
         QEFEdge *e;
+        float error;
 
-        auto operator<=>(const EdgeRef& o) const { return e->error <=> o.e->error; }
+        EdgeRef(QEFEdge *e): e(e), error(e->qef.evaluateError(e->newPos)) {}
+
+        auto operator<=>(const EdgeRef& o) const { return error <=> o.error; }
     };
 
     // Populate the priority queue
