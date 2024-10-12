@@ -5,7 +5,7 @@
 #include <list> // list
 
 
-template <class VertexType = Vertex>
+template <class VertexType = Vertex, class EdgeType = Edge>
 class Manifold {
 private:
     struct AABB {
@@ -39,12 +39,10 @@ public:
     void drawEdges() const;
     void drawVertices() const;
 
-    void saveToFile(const char* filename) const;
-
 protected:
     std::list<VertexType> m_vertices;
     std::list<Face>          m_faces;
-    std::list<Edge>          m_edges;
+    std::list<EdgeType>      m_edges;
     std::list<Halfedge>  m_halfedges;
 
 private:

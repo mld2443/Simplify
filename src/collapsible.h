@@ -4,15 +4,7 @@
 #include "errorfunction.h"
 
 
-class Collapsible : public Manifold<QEFVertex> {
-private:
-    static QuadraticErrorFunction& getQEF(Vertex* v);
-    static f32v3 getNewPoint(const Edge* e);
-    static float getCombinedError(const Edge* e);
-    static bool checkSafety(const Edge *e);
-
-    Vertex* collapse(Edge *e);
-
+class Collapsible : public Manifold<QEFVertex, QEFEdge> {
 public:
     Collapsible(const char* objfile);
 

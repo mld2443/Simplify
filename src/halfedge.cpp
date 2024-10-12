@@ -3,7 +3,7 @@
 #include <GL/gl.h> // glVertex3fv, glNormal3fv
 
 
-static bool surgicalRemoval(Halfedge* he) {
+static uint64_t surgicalRemoval(Halfedge* he) {
     if (he->f->isTriangle()) { // Triangles get removed
         // Update outer flips
         he->prev->flip->flip = he->next->flip;
@@ -23,7 +23,7 @@ static bool surgicalRemoval(Halfedge* he) {
         he->f->invalidate();
         he->invalidate();
 
-        return true;
+        return 1ul;
     } else { // More than 3 sides, just a little housekeeping
         // Make sure the face is not pointing at this particular halfedge
         he->f->he = he->next;
@@ -35,14 +35,12 @@ static bool surgicalRemoval(Halfedge* he) {
         // Still marks the halfedge to be removed
         he->invalidate();
 
-        return false;
+        return 0ul;
     }
 }
 
 // Pretty much irreversible, better mean it!
 uint64_t Halfedge::collapse() {
-    uint64_t deletedFaces = 0ul;
-
     // Make this vertex point to a different halfedge with the same root
     v->he = prev->flip;
 
@@ -59,10 +57,7 @@ uint64_t Halfedge::collapse() {
     e->invalidate();
 
     // Remove everything else very carefully
-    deletedFaces += surgicalRemoval(flip);
-    deletedFaces += surgicalRemoval(this);
-
-    return deletedFaces;
+    return surgicalRemoval(flip) + surgicalRemoval(this);
 }
 
 void Halfedge::invalidate() {

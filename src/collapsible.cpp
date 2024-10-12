@@ -8,12 +8,12 @@ using namespace std;
 
 
 /////////////////
-// QEF, Vertex //
+// DistanceQEF //
 /////////////////
-QuadraticErrorFunction::QuadraticErrorFunction(float n, const f32v3& Sv, float Svtv): n(n), Sv(Sv), Svtv(Svtv) {
+DistanceQEF::DistanceQEF(float n, const f32v3& Sv, float Svtv) : n(n), Sv(Sv), Svtv(Svtv) {
 }
 
-QuadraticErrorFunction::QuadraticErrorFunction(Halfedge* he) : QuadraticErrorFunction() {
+DistanceQEF::DistanceQEF(Halfedge* he) : DistanceQEF() {
     he->v->traverseEdges([&](Halfedge* it) {
         ++n;
         Sv += it->flip->v->pos;
@@ -21,123 +21,146 @@ QuadraticErrorFunction::QuadraticErrorFunction(Halfedge* he) : QuadraticErrorFun
     });
 }
 
-float QuadraticErrorFunction::eval(const f32v3& v) const {
-    return n * v.dot(v) - 2 * v.dot(Sv) + Svtv;
+float DistanceQEF::evaluateErrorImpl(const f32v3& p) const {
+    return n * p.dot(p) - 2 * p.dot(Sv) + Svtv;
 }
 
-QuadraticErrorFunction QuadraticErrorFunction::operator+(const QuadraticErrorFunction& qef) const {
+f32v3 DistanceQEF::minimizeErrorImpl() const {
+    return Sv/n;
+}
+
+DistanceQEF DistanceQEF::operator+(const DistanceQEF& qef) const {
     return { n + qef.n, Sv + qef.Sv, Svtv + qef.Svtv };
 }
 
 
-// Cannot be part of the constructor because the vertices are made before all other components
-void QEFVertex::calcQEF() {
-    qef = { he };
+//////////////
+// PlaneQEF //
+//////////////
+PlaneQEF::PlaneQEF(const f32v3& Snnt012, const f32v3& Snnt458, const f32v3& Snd, float Sd)
+  : Snnt012(Snnt012)
+  , Snnt458(Snnt458)
+  , Snd(Snd)
+  , Sd2(Sd) {
+}
+
+PlaneQEF::PlaneQEF(Vertex* v) : PlaneQEF() {
+    v->traverseEdges([&](Halfedge* it) {
+        const f32v3 n_i = it->f->normal();
+        const float d_i = it->v->pos.dot(n_i);
+        Snnt012 += n_i * n_i.x;
+        Snnt458 += { n_i.y * n_i.y, n_i.y * n_i.z, n_i.z * n_i.z };
+        Snd += n_i * d_i;
+        Sd2 += d_i * d_i;
+    });
+}
+
+float PlaneQEF::evaluateErrorImpl(const f32v3& p) const {
+    return p.dot({ p.dot(Snnt012), p.dot(Snnt345()), p.dot(Snnt678())}) - 2.0f * p.dot(Snd) + Sd2;
+}
+
+f32v3 PlaneQEF::minimizeErrorImpl() const {
+    // NEED PSEUDOINVERSE
+    return {};
+}
+
+PlaneQEF PlaneQEF::operator+(const PlaneQEF& qef) const {
+    return { Snnt012 + qef.Snnt012, Snnt458 + qef.Snnt458, Snd + qef.Snd, Sd2 + qef.Sd2 };
 }
 
 
-QuadraticErrorFunction& Collapsible::getQEF(Vertex *v) {
-    return static_cast<QEFVertex*>(v)->qef;
+/////////////
+// QEFEdge //
+/////////////
+void QEFEdge::updateQEF() {
+    qef = static_cast<QEFVertex*>(he->v)->qef + static_cast<QEFVertex*>(he->flip->v)->qef;
+    newPos = qef.minimizeError();
+    error = qef.evaluateError(newPos);
+    dirty = false;
 }
 
-f32v3 Collapsible::getNewPoint(const Edge *e) {
-    return (getQEF(e->he->v).Sv + getQEF(e->he->flip->v).Sv)/(getQEF(e->he->v).n + getQEF(e->he->flip->v).n);
-}
-
-float Collapsible::getCombinedError(const Edge* e) {
-    return (getQEF(e->he->v) + getQEF(e->he->flip->v)).eval(getNewPoint(e));
-}
-
-
-/////////////////
-// Collapsible //
-/////////////////
-// PRIVATE FUNCTIONS
-
-bool Collapsible::checkSafety(const Edge *e) {
+bool QEFEdge::checkSafety() const {
     // Compute neighborhood of vertices touching one side of prospective edge, less the vertices on its faces
     set<Vertex*> neighbors;
     bool hasOtherNeighbors = false;
 
-    for (Halfedge *it = e->he->flip->next->flip->next; it != e->he->prev->flip; it = it->flip->next) {
+    for (Halfedge *it = he->flip->next->flip->next; it != he->prev->flip; it = it->flip->next) {
         neighbors.insert(it->flip->v);
         hasOtherNeighbors = true;
     }
 
     // Check the neighborhood on the other side for any matches
-    for (Halfedge *it = e->he->next->flip->next; it != e->he->flip->prev->flip; it = it->flip->next) {
+    for (Halfedge *it = he->next->flip->next; it != he->flip->prev->flip; it = it->flip->next) {
         if (neighbors.contains(it->flip->v))
             return false;
         hasOtherNeighbors = true;
     }
 
     // Allow collpase if there are neighbors, or if either side of this edge is not a triangle
-    return hasOtherNeighbors || (!e->he->f->isTriangle() || !e->he->flip->f->isTriangle());
+    return hasOtherNeighbors || (!he->f->isTriangle() || !he->flip->f->isTriangle());
 }
 
-Vertex* Collapsible::collapse(Edge *e) {
-    auto combinedError(getQEF(e->he->v) + getQEF(e->he->flip->v));
-
+size_t QEFEdge::collapse() {
     // Get the new point and calculate its position before altering the topology
-    Vertex *combined = e->he->v;
-    combined->pos = getNewPoint(e);
+    QEFVertex *remaining = static_cast<QEFVertex*>(he->v);
+    remaining->qef = qef;
+    remaining->pos = newPos;
 
-    // Collapse the triangle and record how many faces we removed
-    m_removedCount += e->he->collapse();
-
-    getQEF(combined) = combinedError;
-    return combined;
+    // Collapse the triangle and report how many faces we removed
+    return he->collapse();
 }
 
 
-// PUBLIC FUNCTIONS
-
+/////////////////
+// Collapsible //
+/////////////////
 Collapsible::Collapsible(const char* objfile)
   : Manifold(objfile)
   , m_removedCount(0ul) {
-    for (auto &v : m_vertices)
-        v.calcQEF();
+    for (auto &vertex : m_vertices)
+        vertex.qef = { vertex.he };
+
+    for (auto &edge : m_edges)
+        edge.updateQEF();
 }
 
 void Collapsible::simplify(uint64_t finalCount) {
-    struct EdgeWithError {
-        Edge *e;
-        float error;
+    struct EdgeRef {
+        QEFEdge *e;
 
-        EdgeWithError(Edge* e): e(e), error(getCombinedError(e)) {}
-        EdgeWithError(const EdgeWithError& e) = default;
-
-        auto operator<=>(const EdgeWithError& e) const { return error <=> e.error; }
+        auto operator<=>(const EdgeRef& o) const { return e->error <=> o.e->error; }
     };
 
     // Populate the priority queue
-    priority_queue<EdgeWithError, vector<EdgeWithError>, greater<EdgeWithError>> errors;
-    for (auto &e : m_edges)
-        errors.emplace(&e);
+    priority_queue<EdgeRef, vector<EdgeRef>, greater<EdgeRef>> errors;
+    for (QEFEdge &e : m_edges)
+        errors.push({ &e });
 
     // The heart of the algorithm
     const uint64_t delta = m_faces.size() - finalCount;
     while (m_removedCount < delta && !errors.empty()) {
-        Edge *top = errors.top().e;
+        QEFEdge *top = errors.top().e;
         errors.pop();
 
         if (top->invalid()) {
             // This edge has been deleted during a collapse, remove it from queue
         } else if (top->dirty) {
             // Error has been increased, recalculate it
-            top->dirty = false;
-            errors.emplace(top);
-        } else if (!checkSafety(top)) {
+            top->updateQEF();
+            errors.push({ top });
+        } else if (!top->checkSafety()) {
             // Unsafe edge, remove it, but we'll add it back if a neighbor collapses
             top->unsafe = true;
         } else { // Collapse it!
-            auto v = collapse(top);
+            auto remainingVertex = top->he->v;
+            m_removedCount += top->collapse();
 
-            v->traverseEdges([&](Halfedge* he) {
-                he->e->dirty = true;
-                if (he->e->unsafe) {
-                    he->e->unsafe = false;
-                    errors.emplace(he->e);
+            remainingVertex->traverseEdges([&](Halfedge* he) {
+                auto edge = static_cast<QEFEdge*>(he->e);
+                edge->dirty = true;
+                if (edge->unsafe) {
+                    edge->unsafe = false;
+                    errors.push({ edge });
                 }
             });
         }
@@ -147,8 +170,8 @@ void Collapsible::simplify(uint64_t finalCount) {
     verifyConnections();
 #endif
 
-    const size_t rV = m_vertices.remove_if([](auto& v){ return v.invalid(); });
-    const size_t rF = m_faces.remove_if([](auto& f){ return f.invalid(); });
-    const size_t rE = m_edges.remove_if([](auto& e){ return e.invalid(); });
-    const size_t rH = m_halfedges.remove_if([](auto& he){ return he.invalid(); });
+    m_vertices.remove_if([](auto& v){ return v.invalid(); });
+    m_faces.remove_if([](auto& f){ return f.invalid(); });
+    m_edges.remove_if([](auto& e){ return e.invalid(); });
+    m_halfedges.remove_if([](auto& he){ return he.invalid(); });
 }

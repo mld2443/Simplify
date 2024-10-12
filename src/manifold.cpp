@@ -14,30 +14,30 @@ using namespace std;
 ///////////////////////
 // Bounds, Dimension //
 ///////////////////////
-template <class VertexType>
-Manifold<VertexType>::AABB::Dimension::Dimension()
+template <class VertexType, class EdgeType>
+Manifold<VertexType, EdgeType>::AABB::Dimension::Dimension()
   : lo(numeric_limits<float>::max())
   , hi(numeric_limits<float>::min()) {
 }
 
-template <class VertexType>
-void Manifold<VertexType>::AABB::Dimension::addSample(float s) {
+template <class VertexType, class EdgeType>
+void Manifold<VertexType, EdgeType>::AABB::Dimension::addSample(float s) {
     if (s < lo) lo = s;
     if (s > hi) hi = s;
 }
 
-template <class VertexType>
-float Manifold<VertexType>::AABB::Dimension::delta() const {
+template <class VertexType, class EdgeType>
+float Manifold<VertexType, EdgeType>::AABB::Dimension::delta() const {
     return hi - lo;
 }
 
-template <class VertexType>
-float Manifold<VertexType>::AABB::Dimension::centroid() const {
+template <class VertexType, class EdgeType>
+float Manifold<VertexType, EdgeType>::AABB::Dimension::centroid() const {
     return (hi + lo) / 2.0f;
 }
 
-template <class VertexType>
-void Manifold<VertexType>::AABB::addSample(const f32v3& v) {
+template <class VertexType, class EdgeType>
+void Manifold<VertexType, EdgeType>::AABB::addSample(const f32v3& v) {
     x.addSample(v.x);
     y.addSample(v.y);
     z.addSample(v.z);
@@ -48,8 +48,8 @@ void Manifold<VertexType>::AABB::addSample(const f32v3& v) {
 // Manifold //
 //////////////
 #ifndef NDEBUG
-template <class VertexType>
-void Manifold<VertexType>::verifyConnections() {
+template <class VertexType, class EdgeType>
+void Manifold<VertexType, EdgeType>::verifyConnections() {
     for (const auto &halfedge : m_halfedges) {
         if (!halfedge.invalid()) {
             if (halfedge.v->he == nullptr)
@@ -86,22 +86,21 @@ void Manifold<VertexType>::verifyConnections() {
 }
 #endif
 
-template <class VertexType>
-Manifold<VertexType>::Manifold(const char* objfile) : m_trianglesOnly(true) {
-    map<pair<const Vertex*, const Vertex*>, Edge*> edgeHash;
-
-    vector<Vertex*> vertexPointers;
+template <class VertexType, class EdgeType>
+Manifold<VertexType, EdgeType>::Manifold(const char* objfile) : m_trianglesOnly(true) {
     ifstream file(objfile);
-    string token;
+    vector<Vertex*> vertexPointers;
+    using EdgeKey = pair<const Vertex*, const Vertex*>;
+    map<EdgeKey, Edge*> edgeHash;
 
     if (!file.is_open())
         throw string("Could not open file ") + objfile;
     while (!file.eof()) {
+        string token;
         file >> token;
         if (token[0] == '#') {
             // Discard comments
-            string dummy;
-            getline(file, dummy);
+            getline(file, token);
         } else if (token[0] == 'v' && token[1] != 'n') {
             // Process vertices, discard normals
             f32v3 p;
@@ -109,7 +108,7 @@ Manifold<VertexType>::Manifold(const char* objfile) : m_trianglesOnly(true) {
 
             m_bounds.addSample(p);
 
-            m_vertices.push_back({ nullptr, p });
+            m_vertices.emplace_back(nullptr, p);
             vertexPointers.push_back(&m_vertices.back());
         } else if (token[0] == 'f') {
             // Process faces
@@ -138,12 +137,12 @@ Manifold<VertexType>::Manifold(const char* objfile) : m_trianglesOnly(true) {
                     nextIndex = faceVerts.begin();
 
                 Edge *edge = nullptr;
-                const auto key = pair<const Vertex*, const Vertex*>(max(*index, *nextIndex), min(*index, *nextIndex));
 
+                const EdgeKey key(max(*index, *nextIndex), min(*index, *nextIndex));
                 if (auto result = edgeHash.find(key); result != edgeHash.end()) {
                     edge = result->second;
                 } else {
-                    m_edges.emplace_back(nullptr, false, false);
+                    m_edges.emplace_back(nullptr);
                     edge = edgeHash[key] = &m_edges.back();
                 }
 
@@ -174,18 +173,18 @@ Manifold<VertexType>::Manifold(const char* objfile) : m_trianglesOnly(true) {
 #endif
 }
 
-template <class VertexType>
-f32v3 Manifold<VertexType>::getAABBSizes() const {
+template <class VertexType, class EdgeType>
+f32v3 Manifold<VertexType, EdgeType>::getAABBSizes() const {
     return { m_bounds.x.delta(), m_bounds.y.delta(), m_bounds.z.delta() };
 }
 
-template <class VertexType>
-f32v3 Manifold<VertexType>::getAABBCentroid() const {
+template <class VertexType, class EdgeType>
+f32v3 Manifold<VertexType, EdgeType>::getAABBCentroid() const {
     return { m_bounds.x.centroid(), m_bounds.y.centroid(), m_bounds.z.centroid() };
 }
 
-template <class VertexType>
-void Manifold<VertexType>::drawFaces() const {
+template <class VertexType, class EdgeType>
+void Manifold<VertexType, EdgeType>::drawFaces() const {
     list<const Face*> nonTris;
 
     // Should be faster
@@ -210,8 +209,8 @@ void Manifold<VertexType>::drawFaces() const {
     }
 }
 
-template <class VertexType>
-void Manifold<VertexType>::drawEdges() const {
+template <class VertexType, class EdgeType>
+void Manifold<VertexType, EdgeType>::drawEdges() const {
     static const GLfloat yellow[] = { 1.0f, 1.0f, 0.0f, 1.0f };
     glDisable(GL_LIGHTING);
     glColor4fv(yellow);
@@ -221,8 +220,8 @@ void Manifold<VertexType>::drawEdges() const {
     } glEnd();
 }
 
-template <class VertexType>
-void Manifold<VertexType>::drawVertices() const {
+template <class VertexType, class EdgeType>
+void Manifold<VertexType, EdgeType>::drawVertices() const {
     static const GLfloat red[] = { 1.0f, 0.0f, 0.0f, 1.0f };
     glDisable(GL_LIGHTING);
     glColor4fv(red);
@@ -237,5 +236,5 @@ void Manifold<VertexType>::drawVertices() const {
 // TEMPLATE DECLARATIONS FOR SANITY //
 //////////////////////////////////////
 #include "errorfunction.h"
-template class Manifold<Vertex>;
-template class Manifold<QEFVertex>;
+template class Manifold<Vertex, Edge>;
+template class Manifold<QEFVertex, QEFEdge>;

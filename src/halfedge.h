@@ -36,7 +36,7 @@ struct Vertex {
 
 struct Edge {
     Halfedge *he;
-    bool dirty, unsafe;
+    //bool dirty, unsafe;
 
     f32v3 midpoint() const;
 
