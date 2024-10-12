@@ -94,6 +94,8 @@ Manifold<VertexType>::Manifold(const char* objfile) : m_trianglesOnly(true) {
     ifstream file(objfile);
     string token;
 
+    if (!file.is_open())
+        throw string("Could not open file ") + objfile;
     while (!file.eof()) {
         file >> token;
         if (token[0] == '#') {

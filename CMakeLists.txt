@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.27)
 project(simplify)
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
-set(SOURCE_FILES src/main.cpp src/collapsible.cpp src/halfedge.cpp src/manifold.cpp)
+set(SOURCE_FILES src/main.cpp src/collapsible.cpp src/halfedge.cpp src/manifold.cpp src/Timer.cpp)
 
 add_executable(${PROJECT_NAME} ${SOURCE_FILES})
 

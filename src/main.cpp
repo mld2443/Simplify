@@ -1,4 +1,5 @@
 #include "collapsible.h"
+#include "Timer.h"
 
 #include <cmath>         // tan
 #include <GL/freeglut.h> // glut*, gl*
@@ -150,9 +151,11 @@ static void keyboard(unsigned char key, int x, int y) {
     switch(key) {
     case ' ':
         if (::simplified) {
+            Timer t("Loading Shape");
             delete ::shape;
             ::shape = new Collapsible(::fileName);
         } else {
+            Timer t("Simplifying Shape");
             ::shape->simplify(::target);
         }
         ::simplified = !::simplified;
@@ -238,8 +241,11 @@ static void specialkey(int key, int x, int y) {
 int main(int argc, char **argv) {
     // Load the model
     ::fileName = "...";
-    ::shape = new Collapsible(::fileName);
     ::target = 2'000u;
+    {
+        Timer t("Loading Shape");
+        ::shape = new Collapsible(::fileName);
+    }
 
     // Prepare the window
     glutInit(&argc, argv);
