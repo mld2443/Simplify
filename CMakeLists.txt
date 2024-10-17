@@ -11,3 +11,5 @@ find_package(OpenGL REQUIRED)
 find_package(GLUT REQUIRED)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE OpenGL::OpenGL GLUT::GLUT)
+
+add_executable(svd src/svd.cpp)

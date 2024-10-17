@@ -110,7 +110,7 @@ bool Edge::invalid() const {
 
 
 f32v3 Face::normal() const {
-    return (he->next->next->v->pos - he->v->pos).cross(he->next->next->next->v->pos - he->next->v->pos).normalize();
+    return (he->next->next->v->pos - he->v->pos).cross(he->next->next->next->v->pos - he->next->v->pos).direction();
 }
 
 f32v3 Face::centroid() const {
