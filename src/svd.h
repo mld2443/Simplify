@@ -1,201 +1,13 @@
-/// An implementation of SVD from Numerical Recipes Converted to C++
+/// An implementation of SVD from Numerical Recipes Converted to my linear algebra library in C++
 #pragma once
+
+#include "linearalgebra.h"
 
 #include <cmath>    // sqrt, abs, copysign
 #include <iostream> // istream, ostream
 #include <limits>   // numeric_limits::min, max
-#include <utility>  // integer_sequence
 
 
-#if 1
-/////////////
-// TENSORS //
-/////////////
-
-// The value-type base class
-template <typename T, size_t N, size_t>
-class VecVal {
-private:
-    T data[N];
-
-protected:
-    template <std::same_as<T>... Ts>
-    VecVal(Ts&&... args) : data{ args... } {}
-
-    T&       get(size_t i)       { return data[i]; }
-    const T& get(size_t i) const { return data[i]; }
-
-    inline T* beginImpl() { return data;     }
-    inline T*   endImpl() { return data + N; }
-    inline const T* beginImpl() const { return data;     }
-    inline const T*   endImpl() const { return data + N; }
-};
-
-// The reference-type base class
-template <typename T, size_t N, size_t STRIDE>
-class VecRef {
-public:
-    template <typename PointerType>
-    struct Iterator {
-        PointerType* pos;
-
-        PointerType& operator*() const { return *pos; }
-        Iterator& operator++() { pos += STRIDE; return *this; }
-        bool operator==(const Iterator& o) const { return pos == o.pos; }
-    };
-
-private:
-    T* data;
-
-protected:
-    VecRef(T* origin, size_t offset) : data(origin + offset) {}
-
-    T&       get(size_t i)       { return data[i * STRIDE]; }
-    const T& get(size_t i) const { return data[i * STRIDE]; }
-
-    inline Iterator<T> beginImpl() { return { data };              }
-    inline Iterator<T>   endImpl() { return { data + N * STRIDE }; }
-    inline Iterator<const T> beginImpl() const { return { data };              }
-    inline Iterator<const T>   endImpl() const { return { data + N * STRIDE }; }
-};
-
-// Generic Vector class that can transparently handle reference or value type vectors of arbitrary, compile-time dimensions.
-template <typename T, size_t N, size_t STRIDE, template<typename, size_t, size_t> class VECTYPE>
-class Vector : private VECTYPE<T, N, STRIDE> {
-private:
-    template <typename NEWTYPE>
-    using ReturnVec = Vector<NEWTYPE, N, 1uz, VecVal>;
-
-    // Dirty mapping function implementations
-    template <size_t... INDEX>
-    inline auto mapInternal(auto func, std::index_sequence<INDEX...>) const {
-        return ReturnVec<decltype(func(T()))>{ func(this->get(INDEX))... };
-    }
-    template <size_t... INDEX>
-    inline void mapWriteInternal(auto func, std::index_sequence<INDEX...>) {
-        (func(this->get(INDEX)), ...);
-    }
-    inline void mapWrite(auto func) {
-        mapWriteInternal(func, std::make_index_sequence<N>{});
-    }
-    template <typename T2, size_t STRIDE2, template<typename, size_t, size_t> class OTHERTYPE, size_t... INDEX>
-    inline auto binaryMapInternal(auto func, const Vector<T2, N, STRIDE2, OTHERTYPE>& v, std::index_sequence<INDEX...>) const {
-        return ReturnVec<decltype(func(T(),T2()))>{ func(this->get(INDEX), v[INDEX])... };
-    }
-    template <typename T2, size_t STRIDE2, template<typename, size_t, size_t> class OTHERTYPE>
-    inline auto binaryMap(auto func, const Vector<T2, N, STRIDE2, OTHERTYPE>& v) const {
-        return binaryMapInternal(func, v, std::make_index_sequence<N>{});
-    }
-    template <typename T2, size_t STRIDE2, template<typename, size_t, size_t> class OTHERTYPE, size_t... INDEX>
-    inline void binaryMapWriteInternal(auto func, const Vector<T2, N, STRIDE2, OTHERTYPE>& v, std::index_sequence<INDEX...>) {
-        (func(this->get(INDEX), v[INDEX]), ...);
-    }
-    template <typename T2, size_t STRIDE2, template<typename, size_t, size_t> class OTHERTYPE>
-    inline void binaryMapWrite(auto func, const Vector<T2, N, STRIDE2, OTHERTYPE>& v) {
-        binaryMapWriteInternal(func, v, std::make_index_sequence<N>{});
-    }
-    template <typename T2, size_t STRIDE2, template<typename, size_t, size_t> class OTHERTYPE, size_t... INDEX>
-    inline auto dotInternal(const Vector<T2, N, STRIDE2, OTHERTYPE>& v, std::index_sequence<INDEX...>) const {
-        return ((this->get(INDEX) * v[INDEX]) + ...);
-    }
-
-public:
-    // Value-type constructor
-    template <std::same_as<T>... Ts>
-    Vector(Ts&&... data) : VECTYPE<T, N, STRIDE>(static_cast<T&&>(data)...) {}
-    // Reference-type constructor
-    Vector(T* origin, size_t offset = 0uz) : VECTYPE<T, N, STRIDE>(origin, offset) {}
-
-    // Accessors
-    T&       operator[](size_t i)       { return this->get(i); }
-    const T& operator[](size_t i) const { return this->get(i); }
-
-    // Iterators for loops
-    inline auto begin() { return this->beginImpl(); }
-    inline auto   end() { return this->endImpl();   }
-    inline const auto begin() const { return this->beginImpl(); }
-    inline const auto   end() const { return this->endImpl();   }
-
-    // Public mapping method
-    inline auto map(auto func) const { return mapInternal(func, std::make_index_sequence<N>{}); }
-
-    inline auto operator-() const { return map([](auto& d){ return -d; }); }
-    template <typename T2>
-    inline auto operator*(const T2& s) const { return map([&s](const T& e){ return e * s; }); }
-    template <typename T2>
-    inline auto operator/(const T2& s) const { return map([&s](const T& e){ return e / s; }); }
-    template <typename T2, size_t STRIDE2, template<typename, size_t, size_t> class OTHERTYPE>
-    inline auto operator+(const Vector<T2, N, STRIDE2, OTHERTYPE>& v) const { return binaryMap([](const T& e1, const T2& e2){ return e1 + e2; }, v); }
-    template <typename T2, size_t STRIDE2, template<typename, size_t, size_t> class OTHERTYPE>
-    inline auto operator-(const Vector<T2, N, STRIDE2, OTHERTYPE>& v) const { return binaryMap([](const T& e1, const T2& e2){ return e1 - e2; }, v); }
-
-    template <typename T2>
-    inline auto operator*=(const T2& s) { mapWrite([&s](T& e){ e *= s; }); return *this; }
-    template <typename T2>
-    inline auto operator/=(const T2& s) { mapWrite([&s](T& e){ e /= s; }); return *this; }
-    template <typename T2, size_t STRIDE2, template<typename, size_t, size_t> class OTHERTYPE>
-    inline auto operator+=(const Vector<T2, N, STRIDE2, OTHERTYPE>& v) { binaryMapWrite([](T& e1, const T2& e2){ e1 += e2; }, v); return *this; }
-    template <typename T2, size_t STRIDE2, template<typename, size_t, size_t> class OTHERTYPE>
-    inline auto operator-=(const Vector<T2, N, STRIDE2, OTHERTYPE>& v) { binaryMapWrite([](T& e1, const T2& e2){ e1 -= e2; }, v); return *this; }
-    template <typename T2, size_t STRIDE2, template<typename, size_t, size_t> class OTHERTYPE>
-    inline auto operator=(const Vector<T2, N, STRIDE2, OTHERTYPE>& v) { binaryMapWrite([](T& e1, const T2& e2){ e1 = e2; }, v); return *this; }
-
-    inline T         magnitudeSqr() const { return this->dot(*this);          }
-    inline T            magnitude() const { return std::sqrt(magnitudeSqr()); }
-    inline ReturnVec<T> direction() const { return *this / magnitude();       }
-
-    template <typename T2, size_t STRIDE2, template<typename, size_t, size_t> class OTHERTYPE>
-    inline auto dot(const Vector<T2, N, STRIDE2, OTHERTYPE>& v) const {
-        return dotInternal(v, std::make_index_sequence<N>{});
-    }
-
-    template <typename T2, size_t STRIDE2, template<typename, size_t, size_t> class OTHERTYPE> requires (N == 3ul)
-    inline auto cross(const Vector<T2, N, STRIDE2, OTHERTYPE>& v) const {
-        return ReturnVec{ this->get(1)*v[2] - this->get(2)*v[1],
-                          this->get(2)*v[0] - this->get(0)*v[2],
-                          this->get(0)*v[1] - this->get(1)*v[0] };
-    }
-};
-
-// Specialization allows for complete template type deduction and disallows 0-length array for value-types.
-template <typename T, std::same_as<T>... Ts>
-Vector(T&&, Ts&&...) -> Vector<T, 1uz + sizeof...(Ts), 1uz, VecVal>;
-
-// Right-side operator overloads
-template <typename T, typename T2, size_t N, size_t STRIDE, template<typename, size_t, size_t> class VECTYPE>
-inline auto operator*(const T& s, const Vector<T2, N, STRIDE, VECTYPE> &v) { return v.map([&s](const T& e) { return e * s; }); }
-template <typename T, typename T2, size_t N, size_t STRIDE, template<typename, size_t, size_t> class VECTYPE>
-inline auto operator/(const T& s, const Vector<T2, N, STRIDE, VECTYPE> &v) { return v.map([&s](const T& e) { return e / s; }); }
-template <typename T, size_t N, size_t STRIDE, template<typename, size_t, size_t> class VECTYPE>
-std::ostream& operator<<(std::ostream& os, const Vector<T, N, STRIDE, VECTYPE>& v) {
-    for (size_t i = 0uz; i < N; ++i)
-        os << (i ? " " : "") << v[i];
-    return os;
-}
-
-
-template <typename T, size_t M, size_t N>
-struct Matrix {
-    T data[M * N];
-
-    Matrix() = default;
-    Matrix(const T (&d)[M][N]) { size_t i = 0ul; for (const auto& row : d) for (const auto& elem : row) data[i++] = elem; }
-
-    //Vector<T&, M> row(size_t r) { return Vector<T&, M>(data + r); }
-
-    T& operator[](size_t m, size_t n) { return data[N*m + n]; }
-    const T& operator[](size_t m, size_t n) const { return data[N*m + n]; }
-};
-
-template <typename T, size_t M, size_t N>
-std::ostream& operator<<(std::ostream& os, const Matrix<T, M, N>& m) {
-    for (size_t i = 0ul; i < M; ++i)
-        for (size_t j = 0ul; j < N; ++j)
-            os << (j ? " " : (i ? "\n" : "")) << m[i, j];
-    return os;
-}
-
-#else
 /////////
 // SVD //
 /////////
@@ -205,29 +17,28 @@ class SVD {
 private:
     void decompose();
     void reorder();
-    T pythag(const T a, const T b);
 
 public:
-    SVD(Matrix<T, M, N> &a);
+    SVD(linalg::Matrix<T, M, N> &a);
 
     // Solve with (apply the pseudoinverse to) one or more right-hand sides.
     //void solve(VecDoub_I &b, VecDoub_O &x, Doub thresh);
     //void solve(MatDoub_I &b, MatDoub_O &x, Doub thresh);
 
     // Quantities associated with the range and nullspace of A.
-    size_t rank(T thresh);
-    size_t nullity(T thresh);
-    Matrix<T, M, N> range(T thresh);
-    Matrix<T, M, N> nullspace(T thresh);
+    size_t rank(T thresh = T(-1));
+    size_t nullity(T thresh = T(-1));
+    linalg::Matrix<T, M, N> range(T thresh = T(-1));
+    linalg::Matrix<T, M, N> nullspace(T thresh = T(-1));
 
     // Return reciprocal of the condition number of A.
-    T inv_condition() { return (w[0] <= 0.0 || w[n-1] <= 0.0) ? 0.0 : w[n-1] / w[0]; }
+    T inv_condition() { return (w[0uz] <= 0.0 || w[N-1uz] <= 0.0) ? 0.0 : w[N-1uz] / w[0uz]; }
 
 private:
     //static constexpr size_t MIN = std::min(M, N);
-    Matrix<T, M, N> u; // The matrices U and V.
-    Matrix<T, N, N> v;
-    Vector<T, N> w; // The diagonal matrix W.
+    linalg::Matrix<T, M, N> u; // The matrices U and V.
+    linalg::Matrix<T, N, N> v;
+    linalg::Vector<T, N> w; // The diagonal matrix W.
     T eps, tsh;
 };
 
@@ -237,13 +48,13 @@ template <typename T, size_t M, size_t N>
 void SVD<T, M, N>::decompose() {
     size_t i,j,jj,k,l,nm;
     T anorm,c,f,g,h,s,scale,x,y,z;
-    Vector<T, N> rv1;
+    linalg::Vector<T, N> rv1;
 
     g = scale = anorm = 0.0;
 
     // Householder reduction to bidiagonal form.
-    for (i = 0ul; i < N; ++i) {
-        l = i + 2ul;
+    for (i = 0uz; i < N; ++i) {
+        l = i + 2uz;
         rv1[i] = scale * g;
         g = s = scale = 0.0;
         if (i < M) {
@@ -258,7 +69,7 @@ void SVD<T, M, N>::decompose() {
                 g = -std::copysign(std::sqrt(s), f);
                 h = f * g - s;
                 u[i][i] = f - g;
-                for (j = l - 1; j < n; ++j) {
+                for (j = l - 1; j < N; ++j) {
                     for (s = 0.0, k = i; k < M; ++k)
                         s += u[k][i] * u[k][j];
                     f = s / h;
@@ -271,27 +82,27 @@ void SVD<T, M, N>::decompose() {
         }
         w[i] = scale * g;
         g = s = scale = 0.0;
-        if (i < M && i != N - 1ul) {
-            for (k = l - 1ul; k < N; ++k)
+        if (i < M && i != N - 1uz) {
+            for (k = l - 1uz; k < N; ++k)
                 scale += std::abs(u[i][k]);
             if (scale != 0.0) {
-                for (k = l - 1ul; k < N; ++k) {
+                for (k = l - 1uz; k < N; ++k) {
                     u[i][k] /= scale;
                     s += u[i][k] * u[i][k];
                 }
-                f = u[i][l - 1ul];
+                f = u[i][l - 1uz];
                 g = -std::copysign(std::sqrt(s), f);
                 h = f * g - s;
-                u[i][l - 1ul] = f - g;
-                for (k = l - 1ul; k < N; ++k)
+                u[i][l - 1uz] = f - g;
+                for (k = l - 1uz; k < N; ++k)
                     rv1[k] = u[i][k] / h;
-                for (j = l - 1ul; j < N; ++j) {
-                    for (s = 0.0, k = l - 1ul; k < N; ++k)
+                for (j = l - 1uz; j < N; ++j) {
+                    for (s = 0.0, k = l - 1uz; k < N; ++k)
                         s += u[j][k] * u[i][k];
-                    for (k = l - 1ul; k < N; ++k)
+                    for (k = l - 1uz; k < N; ++k)
                         u[j][k] += s * rv1[k];
                 }
-                for (k = l - 1ul; k < N; ++k)
+                for (k = l - 1uz; k < N; ++k)
                     u[i][k] *= scale;
             }
         }
@@ -299,8 +110,8 @@ void SVD<T, M, N>::decompose() {
     }
 
     // Accumulation of right-hand transformations.
-    for (i = N - 1ul; i >= 0ul; --i) { //FIXME
-        if (i < N - 1ul) {
+    for (i = N - 1uz; i >= 0uz; --i) { //FIXME
+        if (i < N - 1uz) {
             if (g != 0.0) {
                 for (j = l;j < N; ++j) // Double division to avoid possible underflow.
                     v[j][i] = (u[i][j] / u[i][l]) / g;
@@ -320,8 +131,8 @@ void SVD<T, M, N>::decompose() {
     }
 
     // Accumulation of left-hand transformations.
-    for (i = std::min(N, N) - 1ul; i >= 0ul; --i) { //FIXME
-        l = i + 1ul;
+    for (i = std::min(N, N) - 1uz; i >= 0uz; --i) { //FIXME
+        l = i + 1uz;
         g = w[i];
         for (j = l; j < N; ++j)
             u[i][j] = 0.0;
@@ -342,12 +153,12 @@ void SVD<T, M, N>::decompose() {
     }
 
     // Diagonalization of the bidiagonal form: Loop over singular values, and over allowed iterations.
-    for (k = N - 1ul; k >= 0ul; --k) { //FIXME
-        for (size_t iterations = 0ul; iterations < 30ul; ++iterations) {
+    for (k = N - 1uz; k >= 0uz; --k) { //FIXME
+        for (size_t iterations = 0uz; iterations < 30uz; ++iterations) {
             bool flag = true;
             // Test for splitting.
             for (l = k; l >= 0; --l) { //FIXME
-                nm = l - 1ul;
+                nm = l - 1uz;
                 if (l == 0 || std::abs(rv1[l]) <= eps * anorm) {
                     flag = false;
                     break;
@@ -359,18 +170,18 @@ void SVD<T, M, N>::decompose() {
                 // Cancellation of rv1[l], if l > 0.
                 c = 0.0;
                 s = 1.0;
-                for (i = l; i < k + 1ul; ++i) {
+                for (i = l; i < k + 1uz; ++i) {
                     f = s * rv1[i];
                     rv1[i] = c * rv1[i];
                     if (std::abs(f) <= eps * anorm)
                         break;
                     g = w[i];
-                    h = pythag(f, g);
+                    h = std::hypot(f, g);
                     w[i] = h;
                     h = 1.0 / h;
                     c = g * h;
                     s = -f * h;
-                    for (j = 0ul; j < M; ++j) {
+                    for (j = 0uz; j < M; ++j) {
                         y = u[j][nm];
                         z = u[j][i];
                         u[j][nm] = y*c + z*s;
@@ -385,7 +196,7 @@ void SVD<T, M, N>::decompose() {
                 if (z < 0.0) {
                     // Singular value is made nonnegative.
                     w[k] = -z;
-                    for (j = 0ul; j < N; ++j) v[j][k] = -v[j][k];
+                    for (j = 0uz; j < N; ++j) v[j][k] = -v[j][k];
                 }
                 break;
             } else if (iterations == 29) {
@@ -399,18 +210,18 @@ void SVD<T, M, N>::decompose() {
             g = rv1[nm];
             h = rv1[k];
             f = ((y - z) * (y + z) + (g - h) * (g + h)) / (2.0 * h * y);
-            g = pythag(f, 1.0);
+            g = std::hypot(f, 1.0);
             f = ((x - z) * (x + z) + h * ((y / (f + std::copysign(g, f))) - h)) / x;
             c = s = 1.0;
 
             // Next QR transformation:
             for (j = l; j <= nm; ++j) {
-                i = j + 1ul;
+                i = j + 1uz;
                 g = rv1[i];
                 y = w[i];
                 h = s * g;
                 g = c * g;
-                z = pythag(f, h);
+                z = std::hypot(f, h);
                 rv1[j] = z;
                 c = f / z;
                 s = h / z;
@@ -418,13 +229,13 @@ void SVD<T, M, N>::decompose() {
                 g = g*c - x*s;
                 h = y * s;
                 y *= c;
-                for (jj = 0ul; jj < N; ++jj) {
+                for (jj = 0uz; jj < N; ++jj) {
                     x = v[jj][j];
                     z = v[jj][i];
                     v[jj][j] = x*c + z*s;
                     v[jj][i] = z*c - x*s;
                 }
-                z = pythag(f, h);
+                z = std::hypot(f, h);
                 w[j] = z;
                 // Rotation can be arbitrary if z = 0.
                 if (z) {
@@ -434,7 +245,7 @@ void SVD<T, M, N>::decompose() {
                 }
                 f = c*g + s*y;
                 x = c*y - s*g;
-                for (jj = 0ul; jj < M; ++jj) {
+                for (jj = 0uz; jj < M; ++jj) {
                     y = u[jj][j];
                     z = u[jj][i];
                     u[jj][j] = y*c + z*s;
@@ -453,8 +264,8 @@ void SVD<T, M, N>::decompose() {
 // maximize the number of positive elements.
 template <typename T, size_t M, size_t N>
 void SVD<T, M, N>::reorder() {
-    size_t inc = 1ul;
-    do { inc *= 3ul; ++inc; }
+    size_t inc = 1uz;
+    do { inc *= 3uz; ++inc; }
     while (inc <= N);
 
     // Sort. The method is Shell’s sort.
@@ -462,51 +273,51 @@ void SVD<T, M, N>::reorder() {
     // decompose.)
     {
         T sw;
-        Vector<T, M> su;
-        Vector<T, N> sv;
+        linalg::Vector<T, M> su;
+        linalg::Vector<T, N> sv;
         do {
-            inc /= 3ul;
+            inc /= 3uz;
             for (size_t i = inc; i < N; ++i) {
                 sw = w[i];
-                for (size_t k = 0ul; k < M; ++k)
+                for (size_t k = 0uz; k < M; ++k)
                     su[k] = u[k][i];
-                for (size_t k = 0ul; k < N; ++k)
+                for (size_t k = 0uz; k < N; ++k)
                     sv[k] = v[k][i];
                 size_t j = i;
                 while (w[j-inc] < sw) {
                     w[j] = w[j-inc];
-                    for (size_t k = 0ul; k < M; ++k)
+                    for (size_t k = 0uz; k < M; ++k)
                         u[k][j] = u[k][j-inc];
-                    for (size_t k = 0ul; k < N; ++k)
+                    for (size_t k = 0uz; k < N; ++k)
                         v[k][j] = v[k][j-inc];
                     j -= inc;
                     if (j < inc)
                         break;
                 }
                 w[j] = sw;
-                for (size_t k = 0ul; k < M; ++k)
+                for (size_t k = 0uz; k < M; ++k)
                     u[k][j] = su[k];
-                for (size_t k = 0ul; k < N; ++k)
+                for (size_t k = 0uz; k < N; ++k)
                     v[k][j] = sv[k];
             }
-        } while (inc > 1ul);
+        } while (inc > 1uz);
     }
 
     // Flip signs.
-    for (size_t k = 0ul; k < N; ++k) {
-        size_t s = 0ul;
-        for (size_t i = 0ul; i < M; ++i) if (u[i][k] < 0.0) ++s;
-        for (size_t j = 0ul; j < N; ++j) if (v[j][k] < 0.0) ++s;
-        if (s > (M + N)/2ul) {
-            for (size_t i = 0ul; i < M; ++i) u[i][k] = -u[i][k];
-            for (size_t j = 0ul; j < N; ++j) v[j][k] = -v[j][k];
+    for (size_t k = 0uz; k < N; ++k) {
+        size_t s = 0uz;
+        for (size_t i = 0uz; i < M; ++i) if (u[i][k] < 0.0) ++s;
+        for (size_t j = 0uz; j < N; ++j) if (v[j][k] < 0.0) ++s;
+        if (s > (M + N)/2uz) {
+            for (size_t i = 0uz; i < M; ++i) u[i][k] = -u[i][k];
+            for (size_t j = 0uz; j < N; ++j) v[j][k] = -v[j][k];
         }
     }
 }
 
 
 template <typename T, size_t M, size_t N>
-SVD<T, M, N>::SVD(Matrix<T, M, N> &a) : u(a), v(n,n), w(n) {
+SVD<T, M, N>::SVD(linalg::Matrix<T, M, N> &a) /*: u(a), v(n,n), w(n)*/ {
     // Constructor. The single argument is A. The SVD computation is done by decompose, and the results are sorted by reorder.
     eps = std::numeric_limits<T>::epsilon();
     decompose();
@@ -518,10 +329,10 @@ SVD<T, M, N>::SVD(Matrix<T, M, N> &a) : u(a), v(n,n), w(n) {
 // Return the rank of A, after zeroing any singular values smaller than thresh. If thresh is
 // negative, a default value based on estimated roundoff is used.
 template <typename T, size_t M, size_t N>
-size_t SVD<T, M, N>::rank(T thresh = -1.0) {
-    size_t nr = 0ul;
+size_t SVD<T, M, N>::rank(T thresh) {
+    size_t nr = 0uz;
     tsh = (thresh >= 0.0 ? thresh : 0.5 * std::sqrt(M + N + 1.0) * w[0] * eps);
-    for (size_t j = 0ul; j < N; ++j)
+    for (size_t j = 0uz; j < N; ++j)
         if (w[j] > tsh)
             ++nr;
 
@@ -530,10 +341,10 @@ size_t SVD<T, M, N>::rank(T thresh = -1.0) {
 
 //Return the nullity of A, after zeroing any singular values smaller than thresh. Default value as above.
 template <typename T, size_t M, size_t N>
-size_t SVD<T, M, N>::nullity(T thresh = -1.0) {
-    size_t nn = 0ul;
+size_t SVD<T, M, N>::nullity(T thresh) {
+    size_t nn = 0uz;
     tsh = (thresh >= 0.0 ? thresh : 0.5 * std::sqrt(M + N + 1.0) * w[0] * eps);
-    for (size_t j = 0ul; j < N; ++j)
+    for (size_t j = 0uz; j < N; ++j)
         if (w[j] <= tsh)
             ++nn;
 
@@ -542,12 +353,12 @@ size_t SVD<T, M, N>::nullity(T thresh = -1.0) {
 
 // Give an orthonormal basis for the range of A as the columns of a returned matrix. thresh as above.
 template <typename T, size_t M, size_t N>
-Matrix<T, M, N> SVD<T, M, N>::range(T thresh = -1.0) {
-    size_t nr = 0ul;
-    Matrix<T, M, N> range(M, rank(thresh));
-    for (size_t j = 0ul; j < N; ++j) {
+linalg::Matrix<T, M, N> SVD<T, M, N>::range(T thresh) {
+    size_t nr = 0uz;
+    linalg::Matrix<T, M, N> range(M, rank(thresh));
+    for (size_t j = 0uz; j < N; ++j) {
         if (w[j] > tsh) {
-            for (size_t i = 0ul; i < M; ++i)
+            for (size_t i = 0uz; i < M; ++i)
                 range[i, nr] = u[i, j];
             ++nr;
         }
@@ -558,13 +369,13 @@ Matrix<T, M, N> SVD<T, M, N>::range(T thresh = -1.0) {
 
 // Give an orthonormal basis for the nullspace of A as the columns of a returned matrix. thresh as above.
 template <typename T, size_t M, size_t N>
-Matrix<T, M, N> SVD<T, M, N>::nullspace(T thresh = -1.0) {
-    size_t nn = 0ul;
-    Matrix<T, M, N> nullspace(n, nullity(thresh));
+linalg::Matrix<T, M, N> SVD<T, M, N>::nullspace(T thresh) {
+    size_t nn = 0uz;
+    linalg::Matrix<T, M, N> nullspace /*(n, nullity(thresh))*/;
 
-    for (size_t j = 0ul; j < N; ++j) {
+    for (size_t j = 0uz; j < N; ++j) {
         if (w[j] <= tsh) {
-            for (size_t jj = 0ul; jj < N; ++jj)
+            for (size_t jj = 0uz; jj < N; ++jj)
                 nullspace[jj, nn] = v[jj, j];
             ++nn;
         }
@@ -572,9 +383,8 @@ Matrix<T, M, N> SVD<T, M, N>::nullspace(T thresh = -1.0) {
 
     return nullspace;
 }
-#endif
 
-#if 0
+#if 0 // Unmodified C variant
 #define SIGN(a,b) ((b) > 0.0 ? std::fabs(a) : - std::fabs(a))
 
 static double maxarg1, maxarg2;
