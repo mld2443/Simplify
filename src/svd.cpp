@@ -31,25 +31,9 @@ int main() {
         cout << e << " ";
     cout << endl;
 
-    cout << "v2*4.0: " << v2 * 4.0 << ", v1*v2: " << v1.dot(v2) << ", v1.direction(): " << v1.direction() << endl;
+    v2 -= v1;
 
-    // auto v1 = Vector{ 1.0, 2.0, -3.0 };
-    // cout << v1 << endl;
-    // auto v2 = Vector{ -1.0f, 2.0f, -3.0f };
-    // cout << v2 << endl;
-    // cout << v1.dot(v2) << ", " << v1.cross(v2) << endl;
-
-    // M = 4, N = 5
-    // auto a = Matrix{ { { 1.0, 0.0, 0.0, 0.0, 2.0 },
-    //                    { 0.0, 0.0, 3.0, 0.0, 0.0 },
-    //                    { 0.0, 0.0, 0.0, 0.0, 0.0 },
-    //                    { 0.0, 2.0, 0.0, 0.0, 0.0 } } };
-
-    // auto a = Matrix{ { {  1.0, 0.0 },
-    //                    { -1.0, 2.0 } } };
-    // cout << "A:\n" << a << endl;
-    // auto decomp = singleValueDecomposition(a);
-    // cout << "\nU:\n" << decomp.u << "\n\nSigma: " << decomp.w << "\n\nV:\n" << decomp.v << endl;
+    cout << "v2-=v1; v2: " << v2 << ", v2*4.0: " << v2 * 4.0 << ", v1*v2: " << v1.dot(v2) << ", v1.direction(): " << v1.direction() << endl;
 
     return 0;
 }
