@@ -23,11 +23,11 @@ struct v3 {
     inline T    dot(const v3& v) const { return x*v.x + y*v.y + z*v.z;                           }
     inline v3 cross(const v3& v) const { return { y*v.z - z*v.y, z*v.x - x*v.z, x*v.y - y*v.x }; }
 
-    inline T  magnitudeSqr() const { return this->dot(*this);          }
-    inline T     magnitude() const { return std::sqrt(magnitudeSqr()); }
-    inline v3    direction() const { return *this / magnitude();       }
+    inline T  magnitudeSqr() const { return this->dot(*this);    }
+    inline T     magnitude() const { return std::hypot(x, y, z); }
+    inline v3    direction() const { return *this / magnitude(); }
 
-    inline T max() const { return std::max({ x, y, z });  }
+    inline T max() const { return std::max({ x, y, z }); }
 };
 
 template <typename T>

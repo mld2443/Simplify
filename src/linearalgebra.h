@@ -19,15 +19,15 @@ namespace linalg {
 
     protected:
         template <std::same_as<T>... Ts>
-        VecVal(Ts&&... args) : data{ args... } {}
+        constexpr VecVal(Ts&&... values) : data{ values... } {}
 
-        T&       get(size_t i)       { return data[i]; }
-        const T& get(size_t i) const { return data[i]; }
+        constexpr       T& get(size_t i)       { return data[i]; }
+        constexpr const T& get(size_t i) const { return data[i]; }
 
-        inline T* beginImpl() { return data;     }
-        inline T*   endImpl() { return data + N; }
-        inline const T* beginImpl() const { return data;     }
-        inline const T*   endImpl() const { return data + N; }
+        constexpr       T* beginImpl()       { return data;     }
+        constexpr       T*   endImpl()       { return data + N; }
+        constexpr const T* beginImpl() const { return data;     }
+        constexpr const T*   endImpl() const { return data + N; }
     };
 
     // Vector reference-type base class
@@ -35,27 +35,31 @@ namespace linalg {
     class VecRef {
     public:
         template <typename PointerType>
-        struct Iterator {
+        class Iterator {
+        private:
             PointerType* pos;
 
-            PointerType& operator*() const { return *pos; }
-            Iterator& operator++() { pos += STRIDE; return *this; }
-            bool operator==(const Iterator& o) const { return pos == o.pos; }
+        public:
+            constexpr Iterator(PointerType *p) : pos(p) {}
+
+            constexpr PointerType& operator*() const { return *pos; }
+            constexpr Iterator& operator++() { pos += STRIDE; return *this; }
+            constexpr bool operator==(const Iterator& o) const { return pos == o.pos; }
         };
 
     private:
         T* data;
 
     protected:
-        VecRef(T* origin, size_t offset) : data(origin + offset) {}
+        constexpr VecRef(T* origin, size_t offset) : data(origin + offset) {}
 
-        T&       get(size_t i)       { return data[i * STRIDE]; }
-        const T& get(size_t i) const { return data[i * STRIDE]; }
+        constexpr       T& get(size_t i)       { return data[i * STRIDE]; }
+        constexpr const T& get(size_t i) const { return data[i * STRIDE]; }
 
-        inline Iterator<T> beginImpl() { return { data };              }
-        inline Iterator<T>   endImpl() { return { data + N * STRIDE }; }
-        inline Iterator<const T> beginImpl() const { return { data };              }
-        inline Iterator<const T>   endImpl() const { return { data + N * STRIDE }; }
+        constexpr Iterator<T>       beginImpl()       { return { data              }; }
+        constexpr Iterator<T>         endImpl()       { return { data + N * STRIDE }; }
+        constexpr Iterator<const T> beginImpl() const { return { data              }; }
+        constexpr Iterator<const T>   endImpl() const { return { data + N * STRIDE }; }
     };
 
     // Generic Vector class that can transparently perform operations and transformations on and between reference and
@@ -63,111 +67,102 @@ namespace linalg {
     template <typename T, size_t N, size_t STRIDE = 1uz, template<typename, size_t, size_t> class VECTYPE = VecVal>
     class Vector : private VECTYPE<T, N, STRIDE> {
     private:
-        template <typename NEWTYPE>
-        using ReturnVec = Vector<NEWTYPE, N, 1uz, VecVal>;
-
-        // Dirty mapping function implementations
-        template <size_t... INDEX>
-        inline auto mapInternal(auto func, std::index_sequence<INDEX...>) const {
-            return ReturnVec<decltype(func(T()))>{ func(this->get(INDEX))... };
+        // Dirty index_sequence function implementations
+        template <size_t... IDX>
+        static constexpr inline auto broadcastInternal(T value, std::index_sequence<IDX...>) { return Vector<T, N>{ (value + T(0uz * IDX))... }; }
+        template <size_t... IDX>
+        constexpr auto mapInternal(auto func, std::index_sequence<IDX...>) const {
+            return Vector{ func(this->get(IDX))... };
         }
-        template <size_t... INDEX>
-        inline void mapWriteInternal(auto func, std::index_sequence<INDEX...>) {
-            (func(this->get(INDEX)), ...);
+        template <typename T2, size_t STRIDE2, template<typename, size_t, size_t> class OTHERTYPE, size_t... IDX>
+        constexpr auto binaryMapInternal(auto func, const Vector<T2, N, STRIDE2, OTHERTYPE>& v, std::index_sequence<IDX...>) const {
+            return Vector{ func(this->get(IDX), v[IDX])... };
         }
-        inline void mapWrite(auto func) {
-            mapWriteInternal(func, std::make_index_sequence<N>{});
+        template <size_t... IDX>
+        constexpr void mapWriteInternal(auto func, std::index_sequence<IDX...>) {
+            (func(this->get(IDX)), ...);
         }
-        template <typename T2, size_t STRIDE2, template<typename, size_t, size_t> class OTHERTYPE, size_t... INDEX>
-        inline auto binaryMapInternal(auto func, const Vector<T2, N, STRIDE2, OTHERTYPE>& v, std::index_sequence<INDEX...>) const {
-            return ReturnVec<decltype(func(T(),T2()))>{ func(this->get(INDEX), v[INDEX])... };
+        template <typename T2, size_t STRIDE2, template<typename, size_t, size_t> class OTHERTYPE, size_t... IDX>
+        constexpr void binaryMapWriteInternal(auto func, const Vector<T2, N, STRIDE2, OTHERTYPE>& v, std::index_sequence<IDX...>) {
+            (func(this->get(IDX), v[IDX]), ...);
         }
-        template <typename T2, size_t STRIDE2, template<typename, size_t, size_t> class OTHERTYPE>
-        inline auto binaryMap(auto func, const Vector<T2, N, STRIDE2, OTHERTYPE>& v) const {
-            return binaryMapInternal(func, v, std::make_index_sequence<N>{});
-        }
-        template <typename T2, size_t STRIDE2, template<typename, size_t, size_t> class OTHERTYPE, size_t... INDEX>
-        inline void binaryMapWriteInternal(auto func, const Vector<T2, N, STRIDE2, OTHERTYPE>& v, std::index_sequence<INDEX...>) {
-            (func(this->get(INDEX), v[INDEX]), ...);
-        }
-        template <typename T2, size_t STRIDE2, template<typename, size_t, size_t> class OTHERTYPE>
-        inline void binaryMapWrite(auto func, const Vector<T2, N, STRIDE2, OTHERTYPE>& v) {
-            binaryMapWriteInternal(func, v, std::make_index_sequence<N>{});
-        }
-        template <typename T2, size_t STRIDE2, template<typename, size_t, size_t> class OTHERTYPE, size_t... INDEX>
-        inline auto dotInternal(const Vector<T2, N, STRIDE2, OTHERTYPE>& v, std::index_sequence<INDEX...>) const {
-            return ((this->get(INDEX) * v[INDEX]) + ...);
+        template <typename T2, size_t STRIDE2, template<typename, size_t, size_t> class OTHERTYPE, size_t... IDX>
+        constexpr auto dotInternal(const Vector<T2, N, STRIDE2, OTHERTYPE>& v, std::index_sequence<IDX...>) const {
+            return ((this->get(IDX) * v[IDX]) + ...);
         }
 
     public:
         // Value-type constructor
         template <std::same_as<T>... Ts>
-        Vector(Ts&&... data) : VECTYPE<T, N, STRIDE>(static_cast<T&&>(data)...) {}
+        constexpr Vector(Ts&&... data) : VECTYPE<T, N, STRIDE>(static_cast<T&&>(data)...) {}
         // Reference-type constructor
-        Vector(T* origin, size_t offset = 0uz) : VECTYPE<T, N, STRIDE>(origin, offset) {}
+        constexpr Vector(T* origin, size_t offset = 0uz) : VECTYPE<T, N, STRIDE>(origin, offset) {}
+
+        static constexpr Vector broadcast(T value) { return broadcastInternal(value, std::make_index_sequence<N>{}); }
 
         // Accessors
-        T&       operator[](size_t i)       { return this->get(i); }
-        const T& operator[](size_t i) const { return this->get(i); }
+        constexpr       T& operator[](size_t i)       { return this->get(i); }
+        constexpr const T& operator[](size_t i) const { return this->get(i); }
 
         // Iterators for loops
-        inline auto begin() { return this->beginImpl(); }
-        inline auto   end() { return this->endImpl();   }
-        inline const auto begin() const { return this->beginImpl(); }
-        inline const auto   end() const { return this->endImpl();   }
+        constexpr       auto begin()       { return this->beginImpl(); }
+        constexpr       auto   end()       { return this->endImpl();   }
+        constexpr const auto begin() const { return this->beginImpl(); }
+        constexpr const auto   end() const { return this->endImpl();   }
 
-        // Public mapping method
-        inline auto map(auto func) const { return mapInternal(func, std::make_index_sequence<N>{}); }
+        // Exposed mapping method
+        constexpr auto map(auto func) const { return mapInternal(func, std::make_index_sequence<N>{}); }
 
-        inline auto operator-() const { return map([](auto& d){ return -d; }); }
+        // Member operator overloads
+        constexpr auto operator-() const { return map([](auto& d){ return -d; }); }
         template <typename T2>
-        inline auto operator*(const T2& s) const { return map([&s](const T& e){ return e * s; }); }
+        constexpr auto operator*(const T2& s) const { return map([&s](const T& e){ return e * s; }); }
         template <typename T2>
-        inline auto operator/(const T2& s) const { return map([&s](const T& e){ return e / s; }); }
+        constexpr auto operator/(const T2& s) const { return map([&s](const T& e){ return e / s; }); }
         template <typename T2, size_t STRIDE2, template<typename, size_t, size_t> class OTHERTYPE>
-        inline auto operator+(const Vector<T2, N, STRIDE2, OTHERTYPE>& v) const { return binaryMap([](const T& e1, const T2& e2){ return e1 + e2; }, v); }
+        constexpr auto operator+(const Vector<T2, N, STRIDE2, OTHERTYPE>& v) const { return binaryMapInternal([](const T& e1, const T2& e2){ return e1 + e2; }, v, std::make_index_sequence<N>{}); }
         template <typename T2, size_t STRIDE2, template<typename, size_t, size_t> class OTHERTYPE>
-        inline auto operator-(const Vector<T2, N, STRIDE2, OTHERTYPE>& v) const { return binaryMap([](const T& e1, const T2& e2){ return e1 - e2; }, v); }
+        constexpr auto operator-(const Vector<T2, N, STRIDE2, OTHERTYPE>& v) const { return binaryMapInternal([](const T& e1, const T2& e2){ return e1 - e2; }, v, std::make_index_sequence<N>{}); }
 
+        // Mutating operators
         template <typename T2>
-        inline auto operator*=(const T2& s) { mapWrite([&s](T& e){ e *= s; }); return *this; }
+        constexpr auto operator*=(const T2& s) { mapWriteInternal([&s](T& e){ e *= s; }, std::make_index_sequence<N>{}); return *this; }
         template <typename T2>
-        inline auto operator/=(const T2& s) { mapWrite([&s](T& e){ e /= s; }); return *this; }
+        constexpr auto operator/=(const T2& s) { mapWriteInternal([&s](T& e){ e /= s; }, std::make_index_sequence<N>{}); return *this; }
         template <typename T2, size_t STRIDE2, template<typename, size_t, size_t> class OTHERTYPE>
-        inline auto operator+=(const Vector<T2, N, STRIDE2, OTHERTYPE>& v) { binaryMapWrite([](T& e1, const T2& e2){ e1 += e2; }, v); return *this; }
+        constexpr auto operator+=(const Vector<T2, N, STRIDE2, OTHERTYPE>& v) { binaryMapWriteInternal([](T& e1, const T2& e2){ e1 += e2; }, v, std::make_index_sequence<N>{}); return *this; }
         template <typename T2, size_t STRIDE2, template<typename, size_t, size_t> class OTHERTYPE>
-        inline auto operator-=(const Vector<T2, N, STRIDE2, OTHERTYPE>& v) { binaryMapWrite([](T& e1, const T2& e2){ e1 -= e2; }, v); return *this; }
+        constexpr auto operator-=(const Vector<T2, N, STRIDE2, OTHERTYPE>& v) { binaryMapWriteInternal([](T& e1, const T2& e2){ e1 -= e2; }, v, std::make_index_sequence<N>{}); return *this; }
         template <typename T2, size_t STRIDE2, template<typename, size_t, size_t> class OTHERTYPE>
-        inline auto operator=(const Vector<T2, N, STRIDE2, OTHERTYPE>& v) { binaryMapWrite([](T& e1, const T2& e2){ e1 = e2; }, v); return *this; }
+        constexpr auto  operator=(const Vector<T2, N, STRIDE2, OTHERTYPE>& v) { binaryMapWriteInternal([](T& e1, const T2& e2){ e1 = e2;  }, v, std::make_index_sequence<N>{}); return *this; }
 
-        inline T         magnitudeSqr() const { return this->dot(*this);          }
-        inline T            magnitude() const { return std::sqrt(magnitudeSqr()); }
-        inline ReturnVec<T> direction() const { return *this / magnitude();       }
-
+        // Geometric methods
+        constexpr T   magnitudeSqr() const { return this->dot(*this);          }
+        constexpr T      magnitude() const { return std::sqrt(magnitudeSqr()); }
+        constexpr Vector direction() const { return *this / magnitude();       }
         template <typename T2, size_t STRIDE2, template<typename, size_t, size_t> class OTHERTYPE>
-        inline auto dot(const Vector<T2, N, STRIDE2, OTHERTYPE>& v) const {
+        constexpr auto dot(const Vector<T2, N, STRIDE2, OTHERTYPE>& v) const {
             return dotInternal(v, std::make_index_sequence<N>{});
         }
 
+        // Cross product for 3-dimensional vectors
         template <typename T2, size_t STRIDE2, template<typename, size_t, size_t> class OTHERTYPE> requires (N == 3ul)
-        inline auto cross(const Vector<T2, N, STRIDE2, OTHERTYPE>& v) const {
-            return ReturnVec{ this->get(1)*v[2] - this->get(2)*v[1],
-                            this->get(2)*v[0] - this->get(0)*v[2],
-                            this->get(0)*v[1] - this->get(1)*v[0] };
+        constexpr auto cross(const Vector<T2, N, STRIDE2, OTHERTYPE>& v) const {
+            return Vector{ this->get(1)*v[2] - this->get(2)*v[1], this->get(2)*v[0] - this->get(0)*v[2], this->get(0)*v[1] - this->get(1)*v[0] };
         }
     };
 
-    // Specialization allows for complete template type deduction and disallows 0-length array for value-types.
+    // Specialization allows for automatic template deduction and disallows 0-length array for value-types.
     template <typename T, std::same_as<T>... Ts>
     Vector(T&&, Ts&&...) -> Vector<T, 1uz + sizeof...(Ts), 1uz, VecVal>;
 
     // Right-side operator overloads
     template <typename T, typename T2, size_t N, size_t STRIDE, template<typename, size_t, size_t> class VECTYPE>
-    inline auto operator*(const T& s, const Vector<T2, N, STRIDE, VECTYPE> &v) { return v.map([&s](const T& e) { return e * s; }); }
+    constexpr auto operator*(const T& s, const Vector<T2, N, STRIDE, VECTYPE> &v) { return v.map([&s](const T& e) { return e * s; }); }
     template <typename T, typename T2, size_t N, size_t STRIDE, template<typename, size_t, size_t> class VECTYPE>
-    inline auto operator/(const T& s, const Vector<T2, N, STRIDE, VECTYPE> &v) { return v.map([&s](const T& e) { return e / s; }); }
+    constexpr auto operator/(const T& s, const Vector<T2, N, STRIDE, VECTYPE> &v) { return v.map([&s](const T& e) { return e / s; }); }
     template <typename T, size_t N, size_t STRIDE, template<typename, size_t, size_t> class VECTYPE>
-    std::ostream& operator<<(std::ostream& os, const Vector<T, N, STRIDE, VECTYPE>& v) {
+    constexpr std::ostream& operator<<(std::ostream& os, const Vector<T, N, STRIDE, VECTYPE>& v) {
         for (size_t i = 0uz; i < N; ++i)
             os << (i ? " " : "") << v[i];
         return os;
@@ -178,23 +173,60 @@ namespace linalg {
     // MATRIX //
     ////////////
 
+    // Generic Matrix class
     template <typename T, size_t M, size_t N>
-    struct Matrix {
+    class Matrix {
+    private:
         T data[M * N];
 
-        Matrix() = default;
-        Matrix(const T (&d)[M][N]) { size_t i = 0ul; for (const auto& row : d) for (const auto& elem : row) data[i++] = elem; }
+        // Annoying index_sequence function implementations
+        template <size_t... IDX>
+        constexpr static Matrix identityInternal(std::index_sequence<IDX...>) {
+            return { (IDX % (M + 1uz) ? T(0) : T(1))... };
+        }
+        template <typename T2, size_t O, size_t... IDX>
+        constexpr auto multiplyInternal(const Matrix<T2, N, O>& m, std::index_sequence<IDX...>) const {
+            return Matrix<decltype(T()*T2()), M, O>{ getRow(IDX / O).dot(m.getCol(IDX % O))... };
+        }
 
-        //Vector<T&, M> row(size_t r) { return Vector<T&, M>(data + r); }
+    public:
+        // Empty initializer, not sure if it's even useful.
+        constexpr Matrix() = default;
 
-        T& operator[](size_t m, size_t n) { return data[N*m + n]; }
-        const T& operator[](size_t m, size_t n) const { return data[N*m + n]; }
+        // Special index_sequence initializer FIXME can't be private? is it because of the inlining?
+        template <std::same_as<T>... Ts> requires(sizeof...(Ts) == 0uz || sizeof...(Ts) == M*N)
+        constexpr Matrix(Ts&&... values) : data(values...) {}
+
+        // Vector initialization
+        //template <size_t STRIDE, template<typename, size_t, size_t> class VECTYPE>
+        //constexpr Matrix(const Vector<T, M, STRIDE, VECTYPE>& v);
+
+        // Value-initialization constructor
+        constexpr Matrix(T (&&d)[M][N]) { size_t i = 0uz; for (const auto& row : d) for (const auto& elem : row) data[i++] = elem; }
+
+        // Identity matrix for some reason
+        constexpr static Matrix I() requires(M == N) { return identityInternal(std::make_index_sequence<M*N>{}); }
+
+        // Accessors
+        constexpr       T& operator[](size_t m, size_t n)       { return data[n + m*N]; }
+        constexpr const T& operator[](size_t m, size_t n) const { return data[n + m*N]; }
+        constexpr Vector<      T, N, 1uz, VecRef> getRow(size_t row)       { return { data + row * N }; }
+        constexpr Vector<const T, N, 1uz, VecRef> getRow(size_t row) const { return { data + row * N }; }
+        constexpr Vector<      T, M,   N, VecRef> getCol(size_t col)       { return { data + col }; }
+        constexpr Vector<const T, M,   N, VecRef> getCol(size_t col) const { return { data + col }; }
+        constexpr Vector<      T, std::min(M, N), N+1uz, VecRef> getDiag()       { return { data }; }
+        constexpr Vector<const T, std::min(M, N), N+1uz, VecRef> getDiag() const { return { data }; }
+
+        // Member operators
+        template<typename T2, size_t O>
+        constexpr auto operator*(const Matrix<T2, N, O>& m) const { return multiplyInternal(m, std::make_index_sequence<M*O>{}); }
     };
 
+    // Right-side operator overloads
     template <typename T, size_t M, size_t N>
-    std::ostream& operator<<(std::ostream& os, const Matrix<T, M, N>& m) {
-        for (size_t i = 0ul; i < M; ++i)
-            for (size_t j = 0ul; j < N; ++j)
+    constexpr std::ostream& operator<<(std::ostream& os, const Matrix<T, M, N>& m) {
+        for (size_t i = 0uz; i < M; ++i)
+            for (size_t j = 0uz; j < N; ++j)
                 os << (j ? " " : (i ? "\n" : "")) << m[i, j];
         return os;
     }
