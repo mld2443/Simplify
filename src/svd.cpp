@@ -60,7 +60,7 @@ int main() {
 
     constexpr auto m4 = Matrix<unsigned, 5uz, 5uz>::I();
 
-    cout << "constexpr " TEST_MAT(m4) << endl;
+    cout << TEST_MAT(m4) << endl;
 
     return 0;
 }

@@ -44,7 +44,7 @@ namespace linalg {
 
             constexpr PointerType& operator*() const { return *pos; }
             constexpr Iterator& operator++() { pos += STRIDE; return *this; }
-            constexpr bool operator==(const Iterator& o) const { return pos == o.pos; }
+            constexpr bool operator==(const Iterator& o) const = default;
         };
 
     private:
@@ -195,14 +195,17 @@ namespace linalg {
 
         // Special index_sequence initializer FIXME can't be private? is it because of the inlining?
         template <std::same_as<T>... Ts> requires(sizeof...(Ts) == 0uz || sizeof...(Ts) == M*N)
-        constexpr Matrix(Ts&&... values) : data(values...) {}
+        constexpr Matrix(Ts&&... values) : data{ values... } {}
 
-        // Vector initialization
+        // Vector initialization -- problematic given that matrices don't have the same owning/reference dichotomy
         //template <size_t STRIDE, template<typename, size_t, size_t> class VECTYPE>
         //constexpr Matrix(const Vector<T, M, STRIDE, VECTYPE>& v);
 
+        template <size_t... IDX> requires (sizeof...(IDX) == M*N)
+        constexpr Matrix(T (&&data)[M][N], std::index_sequence<IDX...>) : data{ data[IDX/N][IDX%N]... } {}
+
         // Value-initialization constructor
-        constexpr Matrix(T (&&d)[M][N]) { size_t i = 0uz; for (const auto& row : d) for (const auto& elem : row) data[i++] = elem; }
+        constexpr Matrix(T (&&data)[M][N]) : Matrix(std::move(data), std::make_index_sequence<M*N>{}) {}
 
         // Identity matrix for some reason
         constexpr static Matrix I() requires(M == N) { return identityInternal(std::make_index_sequence<M*N>{}); }
