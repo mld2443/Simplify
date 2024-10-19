@@ -4,16 +4,276 @@
 #include <cmath>    // sqrt
 #include <iostream> // ostream
 #include <utility>  // index_sequence, make_index_sequence
+#include <type_traits>
 
+#define GREETINGS() std::cout << "hello from \"" << __PRETTY_FUNCTION__ << "\"" << std::endl
 
 namespace linalg {
+    //////////////
+    // WRAPPERS //
+    //////////////
+
+    // Value type that owns its own data
+    template <typename T, size_t M, size_t N, template <typename, size_t, size_t, class> class BASE>
+    class ValueType : public BASE<T, M, N, ValueType<T, M, N, BASE>> {
+        friend class BASE<T, M, N, ValueType<T, M, N, BASE>>;
+    private:
+        T data[M*N];
+
+    public:
+        template <std::same_as<T>... Ts> requires(sizeof...(Ts) == 0uz || sizeof...(Ts) == M*N)
+        constexpr ValueType(Ts&&... payload) : data{ payload... } {}
+
+    protected:
+        constexpr       T& get(size_t m, size_t n)       { return data[n + m*N]; }
+        constexpr const T& get(size_t m, size_t n) const { return data[n + m*N]; }
+
+        constexpr       T* beginImpl()       { return data;       }
+        constexpr       T*   endImpl()       { return data + M*N; }
+        constexpr const T* beginImpl() const { return data;       }
+        constexpr const T*   endImpl() const { return data + M*N; }
+    };
+
+    // Reference-type that points to data (no ref counting!)
+    //   These should be treated as transient, kinda like an r-value
+    template <typename T, size_t M, size_t N, size_t S, template <typename, size_t, size_t, class> class BASE>
+    class ReferenceType : public BASE<T, M, N, ReferenceType<T, M, N, S, BASE>> {
+        friend class BASE<T, M, N, ReferenceType<T, M, N, S, BASE>>;
+    private:
+        T* data;
+
+    public:
+        class Iterator {
+        private:
+            mutable T* pos;
+
+        public:
+            constexpr Iterator(T* p) : pos(p) {}
+
+            constexpr       T& operator*()       { return *pos; }
+            constexpr const T& operator*() const { return *pos; }
+            constexpr const Iterator& operator++() const { pos += S; return *this; }
+            constexpr bool operator==(const Iterator& o) const = default;
+        };
+
+    public:
+        constexpr ReferenceType(T* origin, size_t offset) : data(origin + offset) {}
+
+    protected:
+        constexpr       T& get(size_t m, size_t n)       { return data[n + m*N]; }
+        constexpr const T& get(size_t m, size_t n) const { return data[n + m*N]; }
+
+        constexpr       Iterator beginImpl()       { return { data           }; }
+        constexpr       Iterator   endImpl()       { return { data + M*N * S }; }
+        constexpr const Iterator beginImpl() const { return { data           }; }
+        constexpr const Iterator   endImpl() const { return { data + M*N * S }; }
+    };
+
+
+    ////////////
+    // VECTOR //
+    ////////////
+
+    // Vector implementation class
+    template <typename T, size_t N, size_t, class DERIVED>
+    class VectorBase {
+    private:
+        template <typename TYPE>
+        using ReturnType = ValueType<TYPE, N, 1uz, VectorBase>;
+
+        constexpr       DERIVED* me()       { return static_cast<      DERIVED*>(this); }
+        constexpr const DERIVED* me() const { return static_cast<const DERIVED*>(this); }
+
+        // Dirty index_sequence function implementations
+        // template <size_t... IDX>
+        // static constexpr inline auto broadcastInternal(T value, std::index_sequence<IDX...>) { return Vector<T, N>{ (value + T(0uz * IDX))... }; }
+        template <size_t... IDX>
+        constexpr auto mapInternal(auto func, std::index_sequence<IDX...>) const {
+            return ReturnType<decltype(func(T()))>{ func(me()->get(IDX, 0uz))... };
+        }
+        template <typename T2, class OTHERTYPE, size_t... IDX>
+        constexpr auto binaryMapInternal(auto func, const VectorBase<T2, N, 1uz, OTHERTYPE>& v, std::index_sequence<IDX...>) const {
+            return ReturnType<decltype(func(T(), T2()))>{ func(me()->get(IDX, 0uz), v[IDX])... };
+        }
+        template <size_t... IDX>
+        constexpr void mapWriteInternal(auto func, std::index_sequence<IDX...>) {
+            (func(me()->get(IDX, 0uz)), ...);
+        }
+        template <typename T2, class OTHERTYPE, size_t... IDX>
+        constexpr void binaryMapWriteInternal(auto func, const VectorBase<T2, N, 1uz, OTHERTYPE>& v, std::index_sequence<IDX...>) {
+            (func(me()->get(IDX, 0uz), v[IDX]), ...);
+        }
+        template <typename T2, class OTHERTYPE, size_t... IDX>
+        constexpr auto dotInternal(const VectorBase<T2, N, 1uz, OTHERTYPE>& v, std::index_sequence<IDX...>) const {
+            return ((me()->get(IDX, 0uz) * v[IDX]) + ...);
+        }
+
+    public:
+        // Accessors
+        constexpr       T& operator[](size_t i)       { return me()->get(i, 0uz); }
+        constexpr const T& operator[](size_t i) const { return me()->get(i, 0uz); }
+
+        // Iterators for loops
+        constexpr       auto begin()       { return me()->beginImpl(); }
+        constexpr       auto   end()       { return me()->endImpl();   }
+        constexpr const auto begin() const { return me()->beginImpl(); }
+        constexpr const auto   end() const { return me()->endImpl();   }
+
+        // Functional style mapping method
+        constexpr auto map(auto func) const { return mapInternal(func, std::make_index_sequence<N>{}); }
+
+        // Member operator overloads
+        constexpr auto operator-() const { return map([](auto& d){ return -d; }); }
+        template <typename T2>
+        constexpr auto operator*(const T2& s) const { return map([&s](const T& e){ return e * s; }); }
+        template <typename T2>
+        constexpr auto operator/(const T2& s) const { return map([&s](const T& e){ return e / s; }); }
+        template <typename T2, class OTHERTYPE>
+        constexpr auto operator+(const VectorBase<T2, N, 1uz, OTHERTYPE>& v) const { return binaryMapInternal([](const T& e1, const T2& e2){ return e1 + e2; }, v, std::make_index_sequence<N>{}); }
+        template <typename T2, class OTHERTYPE>
+        constexpr auto operator-(const VectorBase<T2, N, 1uz, OTHERTYPE>& v) const { return binaryMapInternal([](const T& e1, const T2& e2){ return e1 - e2; }, v, std::make_index_sequence<N>{}); }
+
+        // Mutating operators
+        template <typename T2>
+        constexpr auto& operator*=(const T2& s) { mapWriteInternal([&s](T& e){ e *= s; }, std::make_index_sequence<N>{}); return *me(); }
+        template <typename T2>
+        constexpr auto& operator/=(const T2& s) { mapWriteInternal([&s](T& e){ e /= s; }, std::make_index_sequence<N>{}); return *me(); }
+        template <typename T2, class OTHERTYPE>
+        constexpr auto& operator+=(const VectorBase<T2, N, 1uz, OTHERTYPE>& v) { binaryMapWriteInternal([](T& e1, const T2& e2){ e1 += e2; }, v, std::make_index_sequence<N>{}); return *me(); }
+        template <typename T2, class OTHERTYPE>
+        constexpr auto& operator-=(const VectorBase<T2, N, 1uz, OTHERTYPE>& v) { binaryMapWriteInternal([](T& e1, const T2& e2){ e1 -= e2; }, v, std::make_index_sequence<N>{}); return *me(); }
+        template <typename T2, class OTHERTYPE>
+        constexpr auto&  operator=(const VectorBase<T2, N, 1uz, OTHERTYPE>& v) { binaryMapWriteInternal([](T& e1, const T2& e2){ e1 = e2;  }, v, std::make_index_sequence<N>{}); return *me(); }
+
+        // Geometric methods
+        constexpr T magnitudeSqr() const { return me()->dot(*me());          }
+        constexpr T    magnitude() const { return std::sqrt(magnitudeSqr()); }
+        constexpr auto direction() const { return *me() / magnitude();       }
+        template <typename T2, class OTHERTYPE>
+        constexpr auto dot(const VectorBase<T2, N, 1uz, OTHERTYPE>& v) const {
+            return dotInternal(v, std::make_index_sequence<N>{});
+        }
+
+        // Cross product for 3-dimensional vectors
+        template <typename T2, class OTHERTYPE> requires (N == 3ul)
+        constexpr ReturnType<decltype(T()*T2())> cross(const VectorBase<T2, N, 1uz, OTHERTYPE>& v) const {
+            return { me()->get(1uz, 0uz)*v[2uz] - me()->get(2uz, 0uz)*v[1uz],
+                     me()->get(2uz, 0uz)*v[0uz] - me()->get(0uz, 0uz)*v[2uz],
+                     me()->get(0uz, 0uz)*v[1uz] - me()->get(1uz, 0uz)*v[0uz] };
+        }
+    };
+
+    // Right-side operator overloads
+    template <typename T, typename T2, size_t N, class VECTYPE>
+    constexpr auto operator*(const T& s, const VectorBase<T2, N, 1uz, VECTYPE> &v) { return v.map([&s](const T& e) { return e * s; }); }
+    template <typename T, typename T2, size_t N, class VECTYPE>
+    constexpr auto operator/(const T& s, const VectorBase<T2, N, 1uz, VECTYPE> &v) { return v.map([&s](const T& e) { return e / s; }); }
+    template <typename T, size_t N, class DERIVED>
+    constexpr std::ostream& operator<<(std::ostream& os, const VectorBase<T, N, 1uz, DERIVED>& v) {
+        for (size_t i = 0uz; i < N; ++i)
+            os << (i ? " " : "") << v[i];
+        return os;
+    }
+
+    ////////////
+    // MATRIX //
+    ////////////
+
+    // Matrix implementation class
+    template <typename T, size_t M, size_t N, class DERIVED>
+    class MatrixBase {
+    private:
+        template <typename TYPE>
+        using ReturnType = ValueType<TYPE, M, N, MatrixBase>;
+
+        constexpr       DERIVED* me()       { return static_cast<      DERIVED*>(this); }
+        constexpr const DERIVED* me() const { return static_cast<const DERIVED*>(this); }
+
+        // Annoying index_sequence function implementations
+        template <size_t... IDX>
+        constexpr static auto identityInternal(std::index_sequence<IDX...>) {
+            return ReturnType<T>{ (IDX % (M + 1uz) ? T(0) : T(1))... };
+        }
+        template <typename T2, size_t O, class OTHERTYPE, size_t... IDX>
+        constexpr auto multiplyInternal(const MatrixBase<T2, N, O, OTHERTYPE>& m, std::index_sequence<IDX...>) const {
+            return ValueType<decltype(T()*T2()), M, O, MatrixBase>{ getRow(IDX / O).dot(m.getCol(IDX % O))... };
+        }
+
+    public:
+        // Identity matrix for some reason
+        constexpr static auto I() requires(M == N) { return identityInternal(std::make_index_sequence<M*N>{}); }
+
+        // Accessors
+        constexpr       T& operator[](size_t m, size_t n)       { return me()->get(m, n); }
+        constexpr const T& operator[](size_t m, size_t n) const { return me()->get(m, n); }
+        constexpr ReferenceType<      T, N, 1uz, 1uz, VectorBase> getRow(size_t row)       { return { me()->data, row * N }; }
+        constexpr ReferenceType<const T, N, 1uz, 1uz, VectorBase> getRow(size_t row) const { return { me()->data, row * N }; }
+        constexpr ReferenceType<      T, M, 1uz,   N, VectorBase> getCol(size_t col)       { return { me()->data, col }; }
+        constexpr ReferenceType<const T, M, 1uz,   N, VectorBase> getCol(size_t col) const { return { me()->data, col }; }
+        constexpr ReferenceType<      T, std::min(M, N), 1uz, N+1uz, VectorBase> getDiag()       { return { me()->data }; }
+        constexpr ReferenceType<const T, std::min(M, N), 1uz, N+1uz, VectorBase> getDiag() const { return { me()->data }; }
+
+        // Member operators
+        template<typename T2, size_t O, class OTHERTYPE>
+        constexpr auto operator*(const MatrixBase<T2, N, O, OTHERTYPE>& m) const { return multiplyInternal(m, std::make_index_sequence<M*O>{}); }
+    };
+
+    // Right-side operator overloads
+    template <typename T, size_t M, size_t N, class DERIVED>
+    constexpr std::ostream& operator<<(std::ostream& os, const MatrixBase<T, M, N, DERIVED>& m) {
+        for (size_t i = 0uz; i < M; ++i)
+            for (size_t j = 0uz; j < N; ++j)
+                os << (j ? " " : (i ? "\n" : "")) << m[i, j];
+        return os;
+    }
+
+    /////////////////////
+    // WRAPPED CLASSES //
+    /////////////////////
+    // These 4 are supposed to be the things you actually use; everything else above is inherited
+
+    // Vector value-type struct
+    template <typename T, size_t N>
+    class Vector : public ValueType<T, N, 1uz, VectorBase> {
+    public:
+        template <std::same_as<T>... Ts>
+        constexpr Vector(Ts&&... payload) : ValueType<T, N, 1uz, VectorBase>(std::move(payload)...) {}
+    };
+    // template <typename T, size_t N>
+    // using Vector = ValueType<T, N, VectorBase>; // <-- breaks type deduction guide
+    // Type deduction guide; disallows 0-length array
+    template <typename T, std::same_as<T>... Ts>
+    Vector(T&&, Ts&&...) -> Vector<T, 1uz + sizeof...(Ts)>;
+
+    // Vector reference-type struct
+    template <typename T, size_t N, size_t S = 1uz>
+    class VectorRef : public ReferenceType<T, N, 1uz, S, VectorBase> {
+    public:
+        constexpr VectorRef(T* origin, size_t offset = 0uz) : ReferenceType<T, N, 1uz, S, VectorBase>(origin, offset) {}
+    };
+
+    // Matrix value-type struct
+    template <typename T, size_t M, size_t N>
+    class Matrix : public ValueType<T, M, N, MatrixBase> {
+    public:
+        template <size_t... IDX> requires (sizeof...(IDX) == M*N)
+        constexpr Matrix(T (&&payload)[M][N], std::index_sequence<IDX...>) : ValueType<T, M, N, MatrixBase>(std::move(payload[IDX/N][IDX%N])...) {}
+
+        // Value-initialization constructor
+        constexpr Matrix(T (&&payload)[M][N]) : Matrix(std::move(payload), std::make_index_sequence<M*N>{}) {}
+    };
+}
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+namespace legacy {
     ////////////
     // VECTOR //
     ////////////
 
     // Vector value-type base class
     template <typename T, size_t N, size_t>
-    class VecVal {
+    class [[deprecated]] VecVal {
     private:
         T data[N];
 
@@ -32,7 +292,7 @@ namespace linalg {
 
     // Vector reference-type base class
     template <typename T, size_t N, size_t STRIDE>
-    class VecRef {
+    class [[deprecated]] VecRef {
     public:
         template <typename PointerType>
         class Iterator {
@@ -65,7 +325,7 @@ namespace linalg {
     // Generic Vector class that can transparently perform operations and transformations on and between reference and
     // value type vectors of arbitrary, compile-time dimensions, even between mixed data types, such as float4 + int4.
     template <typename T, size_t N, size_t STRIDE = 1uz, template<typename, size_t, size_t> class VECTYPE = VecVal>
-    class Vector : private VECTYPE<T, N, STRIDE> {
+    class [[deprecated]] Vector : private VECTYPE<T, N, STRIDE> {
     private:
         // Dirty index_sequence function implementations
         template <size_t... IDX>
@@ -175,7 +435,7 @@ namespace linalg {
 
     // Generic Matrix class
     template <typename T, size_t M, size_t N>
-    class Matrix {
+    class [[deprecated]] Matrix {
     private:
         T data[M * N];
 
@@ -200,12 +460,6 @@ namespace linalg {
         // Vector initialization -- problematic given that matrices don't have the same owning/reference dichotomy
         //template <size_t STRIDE, template<typename, size_t, size_t> class VECTYPE>
         //constexpr Matrix(const Vector<T, M, STRIDE, VECTYPE>& v);
-
-        template <size_t... IDX> requires (sizeof...(IDX) == M*N)
-        constexpr Matrix(T (&&data)[M][N], std::index_sequence<IDX...>) : data{ data[IDX/N][IDX%N]... } {}
-
-        // Value-initialization constructor
-        constexpr Matrix(T (&&data)[M][N]) : Matrix(std::move(data), std::make_index_sequence<M*N>{}) {}
 
         // Identity matrix for some reason
         constexpr static Matrix I() requires(M == N) { return identityInternal(std::make_index_sequence<M*N>{}); }
@@ -234,3 +488,5 @@ namespace linalg {
         return os;
     }
 }
+
+#pragma GCC diagnostic pop
