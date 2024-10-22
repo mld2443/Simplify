@@ -4,14 +4,23 @@
 #include <cmath>    // sqrt
 #include <iostream> // ostream
 #include <utility>  // index_sequence, make_index_sequence
-#include <type_traits>
 
-#define GREETINGS() std::cout << "hello from \"" << __PRETTY_FUNCTION__ << "\"" << std::endl
 
 namespace linalg {
-    //////////////
-    // WRAPPERS //
-    //////////////
+    // TODO:
+    // [x] Convert to conventional CRTP
+    // [x] Signed offsets and strides
+    // [ ] Reference type matrices
+    // [ ] Matrix from vectors?
+    // [ ] vector matrix multiply?
+    // [ ] Matrix transpose
+    // [ ] Vector transpose -> Matrix? Makes cartesian products simple
+    // [ ] Extract more common functionality of the various base classes into new superbase?
+    // [ ] Summation of elements, eg like the dot product
+
+    /////////////////////
+    // STORAGE CLASSES //
+    /////////////////////
 
     // Value type that owns its own data
     template <typename T, size_t M, size_t N, template <typename, size_t, size_t, class> class BASE>
@@ -24,19 +33,22 @@ namespace linalg {
         template <std::same_as<T>... Ts> requires(sizeof...(Ts) == 0uz || sizeof...(Ts) == M*N)
         constexpr ValueType(Ts&&... payload) : data{ payload... } {}
 
+        // Iterators for loops
+        constexpr       T* begin()       { return data;       }
+        constexpr       T*   end()       { return data + M*N; }
+        constexpr const T* begin() const { return data;       }
+        constexpr const T*   end() const { return data + M*N; }
+
     protected:
+        constexpr       T& get(size_t i)       { return data[i]; }
+        constexpr const T& get(size_t i) const { return data[i]; }
         constexpr       T& get(size_t m, size_t n)       { return data[n + m*N]; }
         constexpr const T& get(size_t m, size_t n) const { return data[n + m*N]; }
-
-        constexpr       T* beginImpl()       { return data;       }
-        constexpr       T*   endImpl()       { return data + M*N; }
-        constexpr const T* beginImpl() const { return data;       }
-        constexpr const T*   endImpl() const { return data + M*N; }
     };
 
     // Reference-type that points to data (no ref counting!)
     //   These should be treated as transient, kinda like an r-value
-    template <typename T, size_t M, size_t N, size_t S, template <typename, size_t, size_t, class> class BASE>
+    template <typename T, size_t M, size_t N, ssize_t S, template <typename, size_t, size_t, class> class BASE>
     class ReferenceType : public BASE<T, M, N, ReferenceType<T, M, N, S, BASE>> {
         friend class BASE<T, M, N, ReferenceType<T, M, N, S, BASE>>;
     private:
@@ -57,70 +69,92 @@ namespace linalg {
         };
 
     public:
-        constexpr ReferenceType(T* origin, size_t offset) : data(origin + offset) {}
+        constexpr ReferenceType(T* origin, ssize_t offset) : data(origin + offset) {}
+
+        // Iterators for loops
+        constexpr       Iterator begin()       { return { data };                                 }
+        constexpr       Iterator   end()       { return { data + static_cast<ssize_t>(M*N) * S }; }
+        constexpr const Iterator begin() const { return { data };                                 }
+        constexpr const Iterator   end() const { return { data + static_cast<ssize_t>(M*N) * S }; }
 
     protected:
-        constexpr       T& get(size_t m, size_t n)       { return data[n + m*N]; }
-        constexpr const T& get(size_t m, size_t n) const { return data[n + m*N]; }
-
-        constexpr       Iterator beginImpl()       { return { data           }; }
-        constexpr       Iterator   endImpl()       { return { data + M*N * S }; }
-        constexpr const Iterator beginImpl() const { return { data           }; }
-        constexpr const Iterator   endImpl() const { return { data + M*N * S }; }
+        constexpr       T& get(size_t i)       { return data[static_cast<ssize_t>(i) * S]; }
+        constexpr const T& get(size_t i) const { return data[static_cast<ssize_t>(i) * S]; }
+        constexpr       T& get(size_t m, size_t n)       { return data[static_cast<ssize_t>(n + m*N) * S]; }
+        constexpr const T& get(size_t m, size_t n) const { return data[static_cast<ssize_t>(n + m*N) * S]; }
     };
 
 
-    ////////////
-    // VECTOR //
-    ////////////
+    //////////////////
+    // BASE CLASSES //
+    //////////////////
 
-    // Vector implementation class
-    template <typename T, size_t N, size_t, class DERIVED>
-    class VectorBase {
-    private:
-        template <typename TYPE>
-        using ReturnType = ValueType<TYPE, N, 1uz, VectorBase>;
-
+    // COMMON
+    template <typename T, size_t M, size_t N, class DERIVED>
+    class CommonBase {
+    protected:
+        // CRTP 'this' wrapper; obsolete with C++23 'explicit this'
         constexpr       DERIVED* me()       { return static_cast<      DERIVED*>(this); }
         constexpr const DERIVED* me() const { return static_cast<const DERIVED*>(this); }
 
         // Dirty index_sequence function implementations
+        template <size_t... IDX>
+        static constexpr inline auto broadcastInternal(T value, std::index_sequence<IDX...>) { return { (value + T(0uz * IDX))... }; }
+        template <size_t... IDX>
+        constexpr auto sumInternal(std::index_sequence<IDX...>) const {
+            return ((this->me()->get(IDX)) + ...);
+        }
         // template <size_t... IDX>
-        // static constexpr inline auto broadcastInternal(T value, std::index_sequence<IDX...>) { return Vector<T, N>{ (value + T(0uz * IDX))... }; }
+        // constexpr auto mapInternal(auto func, std::index_sequence<IDX...>) const {
+        //     return { func(this->me()->get(IDX))... };
+        // }
+        // template <typename T2, class OTHERTYPE, size_t... IDX>
+        // constexpr auto binaryMapInternal(auto func, const VectorBase<T2, N, 1uz, OTHERTYPE>& v, std::index_sequence<IDX...>) const {
+        //     return { func(this->me()->get(IDX), v[IDX])... };
+        // }
+    };
+
+
+    // VECTOR
+    template <typename T, size_t N, size_t, class DERIVED>
+    class VectorBase : public CommonBase<T, N, 1uz, DERIVED> {
+    private:
+        template <typename TYPE>
+        using ReturnType = ValueType<TYPE, N, 1uz, VectorBase>;
+        template <size_t SIZE>
+        using makeInds = std::make_index_sequence<SIZE>;
+
+        // Dirty index_sequence function implementations
+        // template <size_t... IDX>
+        // static constexpr inline ReturnType<T> broadcastInternal(T value, std::index_sequence<IDX...>) { return { (value + T(0uz * IDX))... }; }
         template <size_t... IDX>
         constexpr auto mapInternal(auto func, std::index_sequence<IDX...>) const {
-            return ReturnType<decltype(func(T()))>{ func(me()->get(IDX, 0uz))... };
+            return ReturnType<decltype(func(T()))>{ func(this->me()->get(IDX))... };
         }
         template <typename T2, class OTHERTYPE, size_t... IDX>
         constexpr auto binaryMapInternal(auto func, const VectorBase<T2, N, 1uz, OTHERTYPE>& v, std::index_sequence<IDX...>) const {
-            return ReturnType<decltype(func(T(), T2()))>{ func(me()->get(IDX, 0uz), v[IDX])... };
+            return ReturnType<decltype(func(T(), T2()))>{ func(this->me()->get(IDX), v[IDX])... };
         }
         template <size_t... IDX>
         constexpr void mapWriteInternal(auto func, std::index_sequence<IDX...>) {
-            (func(me()->get(IDX, 0uz)), ...);
+            (func(this->me()->get(IDX)), ...);
         }
         template <typename T2, class OTHERTYPE, size_t... IDX>
         constexpr void binaryMapWriteInternal(auto func, const VectorBase<T2, N, 1uz, OTHERTYPE>& v, std::index_sequence<IDX...>) {
-            (func(me()->get(IDX, 0uz), v[IDX]), ...);
+            (func(this->me()->get(IDX), v[IDX]), ...);
         }
         template <typename T2, class OTHERTYPE, size_t... IDX>
         constexpr auto dotInternal(const VectorBase<T2, N, 1uz, OTHERTYPE>& v, std::index_sequence<IDX...>) const {
-            return ((me()->get(IDX, 0uz) * v[IDX]) + ...);
+            return ((this->me()->get(IDX) * v[IDX]) + ...);
         }
 
     public:
         // Accessors
-        constexpr       T& operator[](size_t i)       { return me()->get(i, 0uz); }
-        constexpr const T& operator[](size_t i) const { return me()->get(i, 0uz); }
-
-        // Iterators for loops
-        constexpr       auto begin()       { return me()->beginImpl(); }
-        constexpr       auto   end()       { return me()->endImpl();   }
-        constexpr const auto begin() const { return me()->beginImpl(); }
-        constexpr const auto   end() const { return me()->endImpl();   }
+        constexpr       T& operator[](size_t i)       { return this->me()->get(i); }
+        constexpr const T& operator[](size_t i) const { return this->me()->get(i); }
 
         // Functional style mapping method
-        constexpr auto map(auto func) const { return mapInternal(func, std::make_index_sequence<N>{}); }
+        constexpr auto map(auto func) const { return mapInternal(func, makeInds<N>{}); }
 
         // Member operator overloads
         constexpr auto operator-() const { return map([](auto& d){ return -d; }); }
@@ -129,37 +163,35 @@ namespace linalg {
         template <typename T2>
         constexpr auto operator/(const T2& s) const { return map([&s](const T& e){ return e / s; }); }
         template <typename T2, class OTHERTYPE>
-        constexpr auto operator+(const VectorBase<T2, N, 1uz, OTHERTYPE>& v) const { return binaryMapInternal([](const T& e1, const T2& e2){ return e1 + e2; }, v, std::make_index_sequence<N>{}); }
+        constexpr auto operator+(const VectorBase<T2, N, 1uz, OTHERTYPE>& v) const { return binaryMapInternal([](const T& e1, const T2& e2){ return e1 + e2; }, v, makeInds<N>{}); }
         template <typename T2, class OTHERTYPE>
-        constexpr auto operator-(const VectorBase<T2, N, 1uz, OTHERTYPE>& v) const { return binaryMapInternal([](const T& e1, const T2& e2){ return e1 - e2; }, v, std::make_index_sequence<N>{}); }
+        constexpr auto operator-(const VectorBase<T2, N, 1uz, OTHERTYPE>& v) const { return binaryMapInternal([](const T& e1, const T2& e2){ return e1 - e2; }, v, makeInds<N>{}); }
 
         // Mutating operators
         template <typename T2>
-        constexpr auto& operator*=(const T2& s) { mapWriteInternal([&s](T& e){ e *= s; }, std::make_index_sequence<N>{}); return *me(); }
+        inline auto& operator*=(const T2& s) { mapWriteInternal([&s](T& e){ e *= s; }, makeInds<N>{}); return *this->me(); }
         template <typename T2>
-        constexpr auto& operator/=(const T2& s) { mapWriteInternal([&s](T& e){ e /= s; }, std::make_index_sequence<N>{}); return *me(); }
+        inline auto& operator/=(const T2& s) { mapWriteInternal([&s](T& e){ e /= s; }, makeInds<N>{}); return *this->me(); }
         template <typename T2, class OTHERTYPE>
-        constexpr auto& operator+=(const VectorBase<T2, N, 1uz, OTHERTYPE>& v) { binaryMapWriteInternal([](T& e1, const T2& e2){ e1 += e2; }, v, std::make_index_sequence<N>{}); return *me(); }
+        inline auto& operator+=(const VectorBase<T2, N, 1uz, OTHERTYPE>& v) { binaryMapWriteInternal([](T& e1, const T2& e2){ e1 += e2; }, v, makeInds<N>{}); return *this->me(); }
         template <typename T2, class OTHERTYPE>
-        constexpr auto& operator-=(const VectorBase<T2, N, 1uz, OTHERTYPE>& v) { binaryMapWriteInternal([](T& e1, const T2& e2){ e1 -= e2; }, v, std::make_index_sequence<N>{}); return *me(); }
+        inline auto& operator-=(const VectorBase<T2, N, 1uz, OTHERTYPE>& v) { binaryMapWriteInternal([](T& e1, const T2& e2){ e1 -= e2; }, v, makeInds<N>{}); return *this->me(); }
         template <typename T2, class OTHERTYPE>
-        constexpr auto&  operator=(const VectorBase<T2, N, 1uz, OTHERTYPE>& v) { binaryMapWriteInternal([](T& e1, const T2& e2){ e1 = e2;  }, v, std::make_index_sequence<N>{}); return *me(); }
+        inline auto&  operator=(const VectorBase<T2, N, 1uz, OTHERTYPE>& v) { binaryMapWriteInternal([](T& e1, const T2& e2){ e1 = e2;  }, v, makeInds<N>{}); return *this->me(); }
 
         // Geometric methods
-        constexpr T magnitudeSqr() const { return me()->dot(*me());          }
-        constexpr T    magnitude() const { return std::sqrt(magnitudeSqr()); }
-        constexpr auto direction() const { return *me() / magnitude();       }
         template <typename T2, class OTHERTYPE>
-        constexpr auto dot(const VectorBase<T2, N, 1uz, OTHERTYPE>& v) const {
-            return dotInternal(v, std::make_index_sequence<N>{});
-        }
+        constexpr T dot(const VectorBase<T2, N, 1uz, OTHERTYPE>& v) const { return dotInternal(v, makeInds<N>{}); }
+        constexpr T magnitudeSqr() const { return dot(*this->me());          }
+        constexpr T    magnitude() const { return std::sqrt(magnitudeSqr()); }
+        constexpr auto direction() const { return *this->me() / magnitude(); }
 
         // Cross product for 3-dimensional vectors
         template <typename T2, class OTHERTYPE> requires (N == 3ul)
         constexpr ReturnType<decltype(T()*T2())> cross(const VectorBase<T2, N, 1uz, OTHERTYPE>& v) const {
-            return { me()->get(1uz, 0uz)*v[2uz] - me()->get(2uz, 0uz)*v[1uz],
-                     me()->get(2uz, 0uz)*v[0uz] - me()->get(0uz, 0uz)*v[2uz],
-                     me()->get(0uz, 0uz)*v[1uz] - me()->get(1uz, 0uz)*v[0uz] };
+            return { this->me()->get(1uz)*v[2uz] - this->me()->get(2uz)*v[1uz],
+                     this->me()->get(2uz)*v[0uz] - this->me()->get(0uz)*v[2uz],
+                     this->me()->get(0uz)*v[1uz] - this->me()->get(1uz)*v[0uz] };
         }
     };
 
@@ -175,24 +207,22 @@ namespace linalg {
         return os;
     }
 
-    ////////////
-    // MATRIX //
-    ////////////
 
-    // Matrix implementation class
+    // MATRIX
     template <typename T, size_t M, size_t N, class DERIVED>
-    class MatrixBase {
+    class MatrixBase : public CommonBase<T, N, 1uz, DERIVED> {
     private:
         template <typename TYPE>
         using ReturnType = ValueType<TYPE, M, N, MatrixBase>;
-
-        constexpr       DERIVED* me()       { return static_cast<      DERIVED*>(this); }
-        constexpr const DERIVED* me() const { return static_cast<const DERIVED*>(this); }
 
         // Annoying index_sequence function implementations
         template <size_t... IDX>
         constexpr static auto identityInternal(std::index_sequence<IDX...>) {
             return ReturnType<T>{ (IDX % (M + 1uz) ? T(0) : T(1))... };
+        }
+        template <typename T2, class OTHERTYPE, size_t... IDX>
+        constexpr auto binaryMapInternal(auto func, const MatrixBase<T2, M, N, OTHERTYPE>& m, std::index_sequence<IDX...>) const {
+            return ReturnType<decltype(func(T(), T2()))>{ func(this->me()->get(IDX), m.me()->get(IDX))... };
         }
         template <typename T2, size_t O, class OTHERTYPE, size_t... IDX>
         constexpr auto multiplyInternal(const MatrixBase<T2, N, O, OTHERTYPE>& m, std::index_sequence<IDX...>) const {
@@ -204,18 +234,22 @@ namespace linalg {
         constexpr static auto I() requires(M == N) { return identityInternal(std::make_index_sequence<M*N>{}); }
 
         // Accessors
-        constexpr       T& operator[](size_t m, size_t n)       { return me()->get(m, n); }
-        constexpr const T& operator[](size_t m, size_t n) const { return me()->get(m, n); }
-        constexpr ReferenceType<      T, N, 1uz, 1uz, VectorBase> getRow(size_t row)       { return { me()->data, row * N }; }
-        constexpr ReferenceType<const T, N, 1uz, 1uz, VectorBase> getRow(size_t row) const { return { me()->data, row * N }; }
-        constexpr ReferenceType<      T, M, 1uz,   N, VectorBase> getCol(size_t col)       { return { me()->data, col }; }
-        constexpr ReferenceType<const T, M, 1uz,   N, VectorBase> getCol(size_t col) const { return { me()->data, col }; }
-        constexpr ReferenceType<      T, std::min(M, N), 1uz, N+1uz, VectorBase> getDiag()       { return { me()->data }; }
-        constexpr ReferenceType<const T, std::min(M, N), 1uz, N+1uz, VectorBase> getDiag() const { return { me()->data }; }
+        constexpr       T& operator[](size_t m, size_t n)       { return this->me()->get(m, n); }
+        constexpr const T& operator[](size_t m, size_t n) const { return this->me()->get(m, n); }
+        constexpr ReferenceType<      T, N, 1uz, 1uz, VectorBase> getRow(size_t row)       { return { this->me()->data, static_cast<ssize_t>(row * N) }; }
+        constexpr ReferenceType<const T, N, 1uz, 1uz, VectorBase> getRow(size_t row) const { return { this->me()->data, static_cast<ssize_t>(row * N) }; }
+        constexpr ReferenceType<      T, M, 1uz,   N, VectorBase> getCol(size_t col)       { return { this->me()->data, static_cast<ssize_t>(col) }; }
+        constexpr ReferenceType<const T, M, 1uz,   N, VectorBase> getCol(size_t col) const { return { this->me()->data, static_cast<ssize_t>(col) }; }
+        constexpr ReferenceType<      T, std::min(M, N), 1uz, N + 1uz, VectorBase> getDiag()       { return { this->me()->data, 0z }; }
+        constexpr ReferenceType<const T, std::min(M, N), 1uz, N + 1uz, VectorBase> getDiag() const { return { this->me()->data, 0z }; }
 
         // Member operators
         template<typename T2, size_t O, class OTHERTYPE>
         constexpr auto operator*(const MatrixBase<T2, N, O, OTHERTYPE>& m) const { return multiplyInternal(m, std::make_index_sequence<M*O>{}); }
+        template<typename T2, class OTHERTYPE>
+        constexpr auto operator+(const MatrixBase<T2, M, N, OTHERTYPE>& m) const { return binaryMapInternal([](const T& e1, const T2& e2){ return e1 + e2; }, m, std::make_index_sequence<M*N>{}); }
+        template<typename T2, class OTHERTYPE>
+        constexpr auto operator-(const MatrixBase<T2, M, N, OTHERTYPE>& m) const { return binaryMapInternal([](const T& e1, const T2& e2){ return e1 - e2; }, m, std::make_index_sequence<M*N>{}); }
     };
 
     // Right-side operator overloads
@@ -228,7 +262,7 @@ namespace linalg {
     }
 
     /////////////////////
-    // WRAPPED CLASSES //
+    // APPLIED CLASSES //
     /////////////////////
     // These 4 are supposed to be the things you actually use; everything else above is inherited
 
@@ -239,17 +273,14 @@ namespace linalg {
         template <std::same_as<T>... Ts>
         constexpr Vector(Ts&&... payload) : ValueType<T, N, 1uz, VectorBase>(std::move(payload)...) {}
     };
-    // template <typename T, size_t N>
-    // using Vector = ValueType<T, N, VectorBase>; // <-- breaks type deduction guide
-    // Type deduction guide; disallows 0-length array
     template <typename T, std::same_as<T>... Ts>
     Vector(T&&, Ts&&...) -> Vector<T, 1uz + sizeof...(Ts)>;
 
     // Vector reference-type struct
-    template <typename T, size_t N, size_t S = 1uz>
+    template <typename T, size_t N, ssize_t S = 1uz>
     class VectorRef : public ReferenceType<T, N, 1uz, S, VectorBase> {
     public:
-        constexpr VectorRef(T* origin, size_t offset = 0uz) : ReferenceType<T, N, 1uz, S, VectorBase>(origin, offset) {}
+        constexpr VectorRef(T* origin, ssize_t offset = 0uz) : ReferenceType<T, N, 1uz, S, VectorBase>(origin, offset) {}
     };
 
     // Matrix value-type struct
@@ -262,6 +293,9 @@ namespace linalg {
         // Value-initialization constructor
         constexpr Matrix(T (&&payload)[M][N]) : Matrix(std::move(payload), std::make_index_sequence<M*N>{}) {}
     };
+
+    // Matrix reference-type struct
+    // TODO
 }
 
 #pragma GCC diagnostic push
@@ -488,5 +522,4 @@ namespace legacy {
         return os;
     }
 }
-
 #pragma GCC diagnostic pop

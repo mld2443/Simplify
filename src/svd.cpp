@@ -20,22 +20,22 @@ int main() {
     cout << TEST_VEC(v1) << "\t<- a 'value-type' vector that owns its data." << endl;
 
     float reallyLongArray[] = { -1.0f, -3.0f, 0.0f,   1.0f,
-                               4.2f,  3.9f,  -33.0f, 0.003f,
-                               14.0f, 0.0f,  0.0f,   22.0f };
-    auto v2 = linalg::VectorRef<float, 3uz, 3uz>(reallyLongArray, 2uz); //FIXME
+                                4.2f,  3.9f,  -33.0f, 0.003f,
+                                14.0f, 0.0f,  0.0f,   22.0f };
+    auto v2 = linalg::VectorRef<float, 3uz, -3z>(reallyLongArray, 8uz);
     //                          type   size stride                offset
 
     cout << TEST_VEC(v2) << "\t<- a 'reference-type' vector that doesn't own.\nreallyLongArray=";
     for (const auto &e : reallyLongArray)
-       cout << " " << e;
+        cout << " " << e;
     cout << endl;
 
     for (auto &e : v2)
-       e++;
+        ++e;
 
     cout << "incremented v2's elements.\nreallyLongArray=";
     for (const auto &e : reallyLongArray)
-       cout << " " << e;
+        cout << " " << e;
     cout << endl;
 
     // Utilities showcase
@@ -59,7 +59,11 @@ int main() {
     // auto v4 = Vector{ 1.0, -1.0, -1.0, 0.5, 0.1 };
     // cout << TEST_MAT(m1) << "\n" TEST_VEC(m1.getRow(1)) << "\n" TEST_VEC(m1.getCol(3)) << "\n" TEST_VEC(v4) << "\n" TEST_VEC(m1 * v4) << endl;
 
-    constexpr auto m5 = Matrix<unsigned, 5uz, 5uz>::I();
+    auto m5 = Matrix<unsigned, 5uz, 5uz>::I();
+
+    m5.getRow(3uz) += Vector{ 1u, 4u, 20u, 3u, 3u };
+    m5.getCol(0uz) *= 2u;
+    m5.getDiag() *= 3u;
 
     cout << TEST_MAT(m5) << endl;
 
