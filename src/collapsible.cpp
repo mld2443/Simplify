@@ -21,11 +21,11 @@ DistanceQEF::DistanceQEF(Halfedge* he) : DistanceQEF() {
     });
 }
 
-float DistanceQEF::evaluateErrorImpl(const f32v3& p) const {
+float DistanceQEF::evaluateError(const f32v3& p) const {
     return n * p.dot(p) - 2 * p.dot(Sv) + Svtv;
 }
 
-f32v3 DistanceQEF::minimizeErrorImpl() const {
+f32v3 DistanceQEF::minimizeError() const {
     return Sv/n;
 }
 
@@ -55,11 +55,11 @@ PlaneQEF::PlaneQEF(Vertex* v) : PlaneQEF() {
     });
 }
 
-float PlaneQEF::evaluateErrorImpl(const f32v3& p) const {
+float PlaneQEF::evaluateError(const f32v3& p) const {
     return p.dot({ p.dot(Snnt012), p.dot(Snnt345()), p.dot(Snnt678())}) - 2.0f * p.dot(Snd) + Sd2;
 }
 
-f32v3 PlaneQEF::minimizeErrorImpl() const {
+f32v3 PlaneQEF::minimizeError() const {
     // NEED PSEUDOINVERSE
     return {};
 }

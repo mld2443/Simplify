@@ -3,15 +3,7 @@
 #include "halfedge.h"
 
 
-template <class Derived>
-struct QuadraticErrorFunction {
-    inline float evaluateError(const f32v3& p) const { return static_cast<const Derived*>(this)->evaluateErrorImpl(p); }
-    inline f32v3 minimizeError() const { return static_cast<const Derived*>(this)->minimizeErrorImpl(); }
-
-    inline QuadraticErrorFunction operator+(const Derived& qef) const { return *static_cast<const Derived*>(this) + qef; }
-};
-
-struct DistanceQEF : public QuadraticErrorFunction<DistanceQEF> {
+struct DistanceQEF {
     float n;
     f32v3 Sv;
     float Svtv;
@@ -20,13 +12,13 @@ struct DistanceQEF : public QuadraticErrorFunction<DistanceQEF> {
     DistanceQEF(float n, const f32v3& Sv, float Svtv);
     DistanceQEF(Halfedge* he);
 
-    float evaluateErrorImpl(const f32v3& p) const;
-    f32v3 minimizeErrorImpl() const;
+    float evaluateError(const f32v3& p) const;
+    f32v3 minimizeError() const;
 
     DistanceQEF operator+(const DistanceQEF& qef) const;
 };
 
-struct PlaneQEF : public QuadraticErrorFunction<PlaneQEF> {
+struct PlaneQEF {
     f32v3 Snnt012, Snnt458, Snd;
     float Sd2;
 
@@ -34,8 +26,8 @@ struct PlaneQEF : public QuadraticErrorFunction<PlaneQEF> {
     PlaneQEF(const f32v3& Snnt012, const f32v3& Snnt458, const f32v3& Snd, float Sd2);
     PlaneQEF(Vertex* v);
 
-    float evaluateErrorImpl(const f32v3& p) const;
-    f32v3 minimizeErrorImpl() const;
+    float evaluateError(const f32v3& p) const;
+    f32v3 minimizeError() const;
 
     PlaneQEF operator+(const PlaneQEF& qef) const;
 
