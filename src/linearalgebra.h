@@ -10,50 +10,25 @@ namespace linalg {
     // TODO:
     // [x] Convert to conventional CRTP
     // [x] Signed offsets and strides
+    // [x] Extract more common functionality of the various base classes into new superbase?
+    // [x] Summation of elements, eg like the dot product
     // [ ] Reference type matrices
     // [ ] Matrix from vectors?
     // [ ] vector matrix multiply?
     // [ ] Matrix transpose
     // [ ] Vector transpose -> Matrix? Makes cartesian products simple
-    // [ ] Extract more common functionality of the various base classes into new superbase?
-    // [ ] Summation of elements, eg like the dot product
 
-    /////////////////////
-    // STORAGE CLASSES //
-    /////////////////////
+    // Helper macros to reduce clutter, undefined at end of namespace
+    #define COPYCONSTFORTYPE(T1, T2) std::conditional_t<std::is_const_v<T1>, const T2, T2>
+    #define STORAGECLASS template <typename, size_t, size_t, ssize_t> class
+    #define MAKEINDICES(SIZE) std::make_index_sequence<SIZE>{}
 
-    // Value type that owns its own data
-    template <typename T, size_t M, size_t N, template <typename, size_t, size_t, class> class BASE>
-    class ValueType : public BASE<T, M, N, ValueType<T, M, N, BASE>> {
-        friend class BASE<T, M, N, ValueType<T, M, N, BASE>>;
-    private:
-        T data[M*N];
+    ////////////////
+    // ROOT TYPES //
+    ////////////////
 
-    public:
-        template <std::same_as<T>... Ts> requires(sizeof...(Ts) == 0uz || sizeof...(Ts) == M*N)
-        constexpr ValueType(Ts&&... payload) : data{ payload... } {}
-
-        // Iterators for loops
-        constexpr       T* begin()       { return data;       }
-        constexpr       T*   end()       { return data + M*N; }
-        constexpr const T* begin() const { return data;       }
-        constexpr const T*   end() const { return data + M*N; }
-
-    protected:
-        constexpr       T& get(size_t i)       { return data[i]; }
-        constexpr const T& get(size_t i) const { return data[i]; }
-        constexpr       T& get(size_t m, size_t n)       { return data[n + m*N]; }
-        constexpr const T& get(size_t m, size_t n) const { return data[n + m*N]; }
-    };
-
-    // Reference-type that points to data (no ref counting!)
-    //   These should be treated as transient, kinda like an r-value
-    template <typename T, size_t M, size_t N, ssize_t S, template <typename, size_t, size_t, class> class BASE>
-    class ReferenceType : public BASE<T, M, N, ReferenceType<T, M, N, S, BASE>> {
-        friend class BASE<T, M, N, ReferenceType<T, M, N, S, BASE>>;
-    private:
-        T* data;
-
+    template <typename T, size_t M, size_t N, ssize_t S>
+    class StorageRoot {
     public:
         class Iterator {
         private:
@@ -62,146 +37,148 @@ namespace linalg {
         public:
             constexpr Iterator(T* p) : pos(p) {}
 
-            constexpr       T& operator*()       { return *pos; }
-            constexpr const T& operator*() const { return *pos; }
-            constexpr const Iterator& operator++() const { pos += S; return *this; }
+            constexpr decltype(auto) operator*(this auto& self) { return *self.pos; }
+            constexpr decltype(auto) operator++(this auto& self) { self.pos += S; return self; }
             constexpr bool operator==(const Iterator& o) const = default;
         };
 
     public:
-        constexpr ReferenceType(T* origin, ssize_t offset) : data(origin + offset) {}
-
         // Iterators for loops
-        constexpr       Iterator begin()       { return { data };                                 }
-        constexpr       Iterator   end()       { return { data + static_cast<ssize_t>(M*N) * S }; }
-        constexpr const Iterator begin() const { return { data };                                 }
-        constexpr const Iterator   end() const { return { data + static_cast<ssize_t>(M*N) * S }; }
+        constexpr auto begin(this auto& self) -> COPYCONSTFORTYPE(decltype(self), Iterator) { return { self.data }; }
+        constexpr auto   end(this auto& self) -> COPYCONSTFORTYPE(decltype(self), Iterator) { return { self.data + static_cast<ssize_t>(M*N) * S }; }
 
-    protected:
-        constexpr       T& get(size_t i)       { return data[static_cast<ssize_t>(i) * S]; }
-        constexpr const T& get(size_t i) const { return data[static_cast<ssize_t>(i) * S]; }
-        constexpr       T& get(size_t m, size_t n)       { return data[static_cast<ssize_t>(n + m*N) * S]; }
-        constexpr const T& get(size_t m, size_t n) const { return data[static_cast<ssize_t>(n + m*N) * S]; }
+        constexpr decltype(auto) get(this auto& self, size_t i)           { return self.data[static_cast<ssize_t>(i)       * S]; }
+        constexpr decltype(auto) get(this auto& self, size_t m, size_t n) { return self.data[static_cast<ssize_t>(n + m*N) * S]; }
     };
 
+    template <typename T, size_t M, size_t N>
+    class TensorRoot {
+    public:
+        constexpr auto map(this const auto& self, auto func) { return self.mapInternal(func, MAKEINDICES(M*N)); }
+        constexpr auto fold(this const auto& self, auto func, T starting) { return self.foldInternal(func, starting, MAKEINDICES(M*N)); }
 
-    //////////////////
-    // BASE CLASSES //
-    //////////////////
-
-    // COMMON
-    template <typename T, size_t M, size_t N, class DERIVED>
-    class CommonBase {
     protected:
-        // CRTP 'this' wrapper; obsolete with C++23 'explicit this'
-        constexpr       DERIVED* me()       { return static_cast<      DERIVED*>(this); }
-        constexpr const DERIVED* me() const { return static_cast<const DERIVED*>(this); }
-
-        // Dirty index_sequence function implementations
         template <size_t... IDX>
-        static constexpr inline auto broadcastInternal(T value, std::index_sequence<IDX...>) { return { (value + T(0uz * IDX))... }; }
-        template <size_t... IDX>
-        constexpr auto sumInternal(std::index_sequence<IDX...>) const {
-            return ((this->me()->get(IDX)) + ...);
+        constexpr auto foldInternal(this const auto& self, auto& func, T starting, std::index_sequence<IDX...>) {
+            return ((starting = func(starting, self.get(IDX))), ...);
         }
-        // template <size_t... IDX>
-        // constexpr auto mapInternal(auto func, std::index_sequence<IDX...>) const {
-        //     return { func(this->me()->get(IDX))... };
-        // }
-        // template <typename T2, class OTHERTYPE, size_t... IDX>
-        // constexpr auto binaryMapInternal(auto func, const VectorBase<T2, N, 1uz, OTHERTYPE>& v, std::index_sequence<IDX...>) const {
-        //     return { func(this->me()->get(IDX), v[IDX])... };
-        // }
+        template <typename MYTYPE, size_t... IDX>
+        constexpr auto mapInternal(this const MYTYPE& self, auto func, std::index_sequence<IDX...>) {
+            return typename MYTYPE::template ReturnType<decltype(func(T()))>{ func(self.get(IDX))... };
+        }
+        template <typename MYTYPE, typename OTHER, size_t... IDX>
+        constexpr auto binaryMapInternal(this const MYTYPE& self, auto func, const OTHER& v, std::index_sequence<IDX...>) {
+            return typename MYTYPE::template ReturnType<decltype(func(T(), typename OTHER::BaseType()))>{ func(self.get(IDX), v.get(IDX))... };
+        }
+        template <size_t... IDX>
+        inline void mapWriteInternal(this auto& self, auto func, std::index_sequence<IDX...>) {
+            (func(self.get(IDX)), ...);
+        }
+        template <size_t... IDX>
+        inline void binaryMapWriteInternal(this auto& self, auto func, const auto& v, std::index_sequence<IDX...>) {
+            (func(self.get(IDX), v.get(IDX)), ...);
+        }
     };
 
+
+    ///////////////////
+    // STORAGE TYPES //
+    ///////////////////
+
+    // Value type that owns its own data
+    template <typename T, size_t M, size_t N, ssize_t>
+    class ValueType : public StorageRoot<T, M, N, 1z> {
+        friend StorageRoot<T, M, N, 1z>;
+    protected:
+        T data[M*N];
+
+        template <std::same_as<T>... Ts> requires(sizeof...(Ts) == 0uz || sizeof...(Ts) == M*N)
+        constexpr ValueType(Ts&&... payload) : data{ payload... } {}
+    };
+
+    // Reference-type that points to data (no ref counting!)
+    //   These should be treated as transient, kinda like an r-value
+    template <typename T, size_t M, size_t N, ssize_t S>
+    class ReferenceType : public StorageRoot<T, M, N, S> {
+        friend StorageRoot<T, M, N, S>;
+    protected:
+        T* data;
+
+        constexpr ReferenceType(T* origin, ssize_t offset) : data(origin + offset) {}
+    };
+
+
+    //////////////////
+    // TENSOR TYPES //
+    //////////////////
 
     // VECTOR
-    template <typename T, size_t N, size_t, class DERIVED>
-    class VectorBase : public CommonBase<T, N, 1uz, DERIVED> {
-    private:
+    template <typename T, size_t N, ssize_t S, STORAGECLASS STORAGETYPE>
+    class VectorBase : public TensorRoot<T, N, 1uz>, public STORAGETYPE<T, N, 1uz, S> {
+    public:
+        using BaseType = T;
         template <typename TYPE>
-        using ReturnType = ValueType<TYPE, N, 1uz, VectorBase>;
-        template <size_t SIZE>
-        using makeInds = std::make_index_sequence<SIZE>;
+        using ReturnType = VectorBase<TYPE, N, 1uz, ValueType>;
 
-        // Dirty index_sequence function implementations
-        // template <size_t... IDX>
-        // static constexpr inline ReturnType<T> broadcastInternal(T value, std::index_sequence<IDX...>) { return { (value + T(0uz * IDX))... }; }
-        template <size_t... IDX>
-        constexpr auto mapInternal(auto func, std::index_sequence<IDX...>) const {
-            return ReturnType<decltype(func(T()))>{ func(this->me()->get(IDX))... };
-        }
-        template <typename T2, class OTHERTYPE, size_t... IDX>
-        constexpr auto binaryMapInternal(auto func, const VectorBase<T2, N, 1uz, OTHERTYPE>& v, std::index_sequence<IDX...>) const {
-            return ReturnType<decltype(func(T(), T2()))>{ func(this->me()->get(IDX), v[IDX])... };
-        }
-        template <size_t... IDX>
-        constexpr void mapWriteInternal(auto func, std::index_sequence<IDX...>) {
-            (func(this->me()->get(IDX)), ...);
-        }
-        template <typename T2, class OTHERTYPE, size_t... IDX>
-        constexpr void binaryMapWriteInternal(auto func, const VectorBase<T2, N, 1uz, OTHERTYPE>& v, std::index_sequence<IDX...>) {
-            (func(this->me()->get(IDX), v[IDX]), ...);
-        }
-        template <typename T2, class OTHERTYPE, size_t... IDX>
-        constexpr auto dotInternal(const VectorBase<T2, N, 1uz, OTHERTYPE>& v, std::index_sequence<IDX...>) const {
-            return ((this->me()->get(IDX) * v[IDX]) + ...);
+    private:
+        template <typename T2, ssize_t S2, STORAGECLASS OTHERSTORAGE, size_t... IDX>
+        constexpr auto dotInternal(this const auto& self, const VectorBase<T2, N, S2, OTHERSTORAGE>& v, std::index_sequence<IDX...>) {
+            return ((self[IDX] * v[IDX]) + ...);
         }
 
     public:
-        // Accessors
-        constexpr       T& operator[](size_t i)       { return this->me()->get(i); }
-        constexpr const T& operator[](size_t i) const { return this->me()->get(i); }
+        // Constructors
+        template <size_t... IDX>
+        constexpr VectorBase(T value, std::index_sequence<IDX...>) : STORAGETYPE<T, N, 1uz, 1z>(value + T(0uz & IDX)...) {}
+        template <std::same_as<T>... Ts>
+        constexpr VectorBase(Ts&&... payload) : STORAGETYPE<T, N, 1uz, 1z>(std::forward<T>(payload)...) {}
+        constexpr VectorBase(T* origin, ssize_t offset) : STORAGETYPE<T, N, 1uz, S>(origin, offset) {}
 
-        // Functional style mapping method
-        constexpr auto map(auto func) const { return mapInternal(func, makeInds<N>{}); }
+        // Accessors
+        constexpr decltype(auto) operator[](this auto& self, size_t i) { return self.get(i); }
 
         // Member operator overloads
-        constexpr auto operator-() const { return map([](auto& d){ return -d; }); }
-        template <typename T2>
-        constexpr auto operator*(const T2& s) const { return map([&s](const T& e){ return e * s; }); }
-        template <typename T2>
-        constexpr auto operator/(const T2& s) const { return map([&s](const T& e){ return e / s; }); }
-        template <typename T2, class OTHERTYPE>
-        constexpr auto operator+(const VectorBase<T2, N, 1uz, OTHERTYPE>& v) const { return binaryMapInternal([](const T& e1, const T2& e2){ return e1 + e2; }, v, makeInds<N>{}); }
-        template <typename T2, class OTHERTYPE>
-        constexpr auto operator-(const VectorBase<T2, N, 1uz, OTHERTYPE>& v) const { return binaryMapInternal([](const T& e1, const T2& e2){ return e1 - e2; }, v, makeInds<N>{}); }
+        constexpr auto operator-() const { return this->map([](auto& e){ return -e; }); }
+        constexpr auto operator*(const auto& s) const { return this->map([&s](const T& e){ return e * s; }); }
+        constexpr auto operator/(const auto& s) const { return this->map([&s](const T& e){ return e / s; }); }
+        template <typename T2, ssize_t S2, STORAGECLASS OTHERSTORAGE>
+        constexpr auto operator+(const VectorBase<T2, N, S2, OTHERSTORAGE>& v) const { return this->binaryMapInternal([](const T& e1, const T2& e2){ return e1 + e2; }, v, MAKEINDICES(N)); }
+        template <typename T2, ssize_t S2, STORAGECLASS OTHERSTORAGE>
+        constexpr auto operator-(const VectorBase<T2, N, S2, OTHERSTORAGE>& v) const { return this->binaryMapInternal([](const T& e1, const T2& e2){ return e1 - e2; }, v, MAKEINDICES(N)); }
 
         // Mutating operators
-        template <typename T2>
-        inline auto& operator*=(const T2& s) { mapWriteInternal([&s](T& e){ e *= s; }, makeInds<N>{}); return *this->me(); }
-        template <typename T2>
-        inline auto& operator/=(const T2& s) { mapWriteInternal([&s](T& e){ e /= s; }, makeInds<N>{}); return *this->me(); }
-        template <typename T2, class OTHERTYPE>
-        inline auto& operator+=(const VectorBase<T2, N, 1uz, OTHERTYPE>& v) { binaryMapWriteInternal([](T& e1, const T2& e2){ e1 += e2; }, v, makeInds<N>{}); return *this->me(); }
-        template <typename T2, class OTHERTYPE>
-        inline auto& operator-=(const VectorBase<T2, N, 1uz, OTHERTYPE>& v) { binaryMapWriteInternal([](T& e1, const T2& e2){ e1 -= e2; }, v, makeInds<N>{}); return *this->me(); }
-        template <typename T2, class OTHERTYPE>
-        inline auto&  operator=(const VectorBase<T2, N, 1uz, OTHERTYPE>& v) { binaryMapWriteInternal([](T& e1, const T2& e2){ e1 = e2;  }, v, makeInds<N>{}); return *this->me(); }
+        inline auto& operator*=(const auto& s) { this->mapWriteInternal([&s](T& e){ e *= s; }, MAKEINDICES(N)); return *this; }
+        inline auto& operator/=(const auto& s) { this->mapWriteInternal([&s](T& e){ e /= s; }, MAKEINDICES(N)); return *this; }
+        template <typename T2, ssize_t S2, STORAGECLASS OTHERSTORAGE>
+        inline auto& operator+=(const VectorBase<T2, N, S2, OTHERSTORAGE>& v) { this->binaryMapWriteInternal([](T& e1, const T2& e2){ e1 += e2; }, v, MAKEINDICES(N)); return *this; }
+        template <typename T2, ssize_t S2, STORAGECLASS OTHERSTORAGE>
+        inline auto& operator-=(const VectorBase<T2, N, S2, OTHERSTORAGE>& v) { this->binaryMapWriteInternal([](T& e1, const T2& e2){ e1 -= e2; }, v, MAKEINDICES(N)); return *this; }
+        template <typename T2, ssize_t S2, STORAGECLASS OTHERSTORAGE>
+        inline auto&  operator=(const VectorBase<T2, N, S2, OTHERSTORAGE>& v) { this->binaryMapWriteInternal([](T& e1, const T2& e2){ e1  = e2; }, v, MAKEINDICES(N)); return *this; }
 
         // Geometric methods
-        template <typename T2, class OTHERTYPE>
-        constexpr T dot(const VectorBase<T2, N, 1uz, OTHERTYPE>& v) const { return dotInternal(v, makeInds<N>{}); }
-        constexpr T magnitudeSqr() const { return dot(*this->me());          }
+        template <typename T2, ssize_t S2, STORAGECLASS OTHERSTORAGE>
+        constexpr T dot(const VectorBase<T2, N, S2, OTHERSTORAGE>& v) const { return dotInternal(v, MAKEINDICES(N)); }
+        constexpr T magnitudeSqr() const { return dot(*this);                }
         constexpr T    magnitude() const { return std::sqrt(magnitudeSqr()); }
-        constexpr auto direction() const { return *this->me() / magnitude(); }
+        constexpr auto direction() const { return *this / magnitude();       }
 
         // Cross product for 3-dimensional vectors
-        template <typename T2, class OTHERTYPE> requires (N == 3ul)
-        constexpr ReturnType<decltype(T()*T2())> cross(const VectorBase<T2, N, 1uz, OTHERTYPE>& v) const {
-            return { this->me()->get(1uz)*v[2uz] - this->me()->get(2uz)*v[1uz],
-                     this->me()->get(2uz)*v[0uz] - this->me()->get(0uz)*v[2uz],
-                     this->me()->get(0uz)*v[1uz] - this->me()->get(1uz)*v[0uz] };
+        template <typename T2, ssize_t S2, STORAGECLASS OTHERSTORAGE>
+        constexpr ReturnType<decltype(T()*T2())> cross(this const VectorBase<T, 3ul, S, STORAGETYPE>& self, const VectorBase<T2, N, S2, OTHERSTORAGE>& v) {
+            return { self[1uz]*v[2uz] - self[2uz]*v[1uz],
+                     self[2uz]*v[0uz] - self[0uz]*v[2uz],
+                     self[0uz]*v[1uz] - self[1uz]*v[0uz] };
         }
     };
 
     // Right-side operator overloads
-    template <typename T, typename T2, size_t N, class VECTYPE>
-    constexpr auto operator*(const T& s, const VectorBase<T2, N, 1uz, VECTYPE> &v) { return v.map([&s](const T& e) { return e * s; }); }
-    template <typename T, typename T2, size_t N, class VECTYPE>
-    constexpr auto operator/(const T& s, const VectorBase<T2, N, 1uz, VECTYPE> &v) { return v.map([&s](const T& e) { return e / s; }); }
-    template <typename T, size_t N, class DERIVED>
-    constexpr std::ostream& operator<<(std::ostream& os, const VectorBase<T, N, 1uz, DERIVED>& v) {
+    template <typename T, size_t N, typename T2, ssize_t S2, STORAGECLASS OTHERSTORAGE>
+    constexpr auto operator*(const T& s, const VectorBase<T2, N, S2, OTHERSTORAGE> &v) { return v.map([&s](const T& e) { return e * s; }); }
+    template <typename T, size_t N, typename T2, ssize_t S2, STORAGECLASS OTHERSTORAGE>
+    constexpr auto operator/(const T& s, const VectorBase<T2, N, S2, OTHERSTORAGE> &v) { return v.map([&s](const T& e) { return e / s; }); }
+    template <typename T, size_t N, ssize_t S, STORAGECLASS STORAGETYPE>
+    constexpr std::ostream& operator<<(std::ostream& os, const VectorBase<T, N, S, STORAGETYPE>& v) {
         for (size_t i = 0uz; i < N; ++i)
             os << (i ? " " : "") << v[i];
         return os;
@@ -209,97 +186,103 @@ namespace linalg {
 
 
     // MATRIX
-    template <typename T, size_t M, size_t N, class DERIVED>
-    class MatrixBase : public CommonBase<T, N, 1uz, DERIVED> {
-    private:
+    template <typename T, size_t M, size_t N, ssize_t S, STORAGECLASS STORAGETYPE>
+    class MatrixBase : public TensorRoot<T, M, N>, public STORAGETYPE<T, M, N, S> {
+    public:
+        using BaseType = T;
         template <typename TYPE>
-        using ReturnType = ValueType<TYPE, M, N, MatrixBase>;
+        using ReturnType = MatrixBase<TYPE, M, N, 1z, ValueType>;
 
-        // Annoying index_sequence function implementations
+    private:
         template <size_t... IDX>
-        constexpr static auto identityInternal(std::index_sequence<IDX...>) {
-            return ReturnType<T>{ (IDX % (M + 1uz) ? T(0) : T(1))... };
+        constexpr static ReturnType<T> identityInternal(std::index_sequence<IDX...>) {
+            return { (IDX % (M + 1uz) ? T(0) : T(1))... };
         }
-        template <typename T2, class OTHERTYPE, size_t... IDX>
-        constexpr auto binaryMapInternal(auto func, const MatrixBase<T2, M, N, OTHERTYPE>& m, std::index_sequence<IDX...>) const {
-            return ReturnType<decltype(func(T(), T2()))>{ func(this->me()->get(IDX), m.me()->get(IDX))... };
-        }
-        template <typename T2, size_t O, class OTHERTYPE, size_t... IDX>
-        constexpr auto multiplyInternal(const MatrixBase<T2, N, O, OTHERTYPE>& m, std::index_sequence<IDX...>) const {
-            return ValueType<decltype(T()*T2()), M, O, MatrixBase>{ getRow(IDX / O).dot(m.getCol(IDX % O))... };
+        template <typename T2, size_t O, ssize_t S2, STORAGECLASS OTHERSTORAGE, size_t... IDX>
+        constexpr auto matrixMultiply(const MatrixBase<T2, N, O, S2, OTHERSTORAGE>& m, std::index_sequence<IDX...>) const {
+            return MatrixBase<decltype(T()*T2()), M, O, 1z, ValueType>{ getRow(IDX / O).dot(m.getCol(IDX % O))... };
         }
 
     public:
+        // Constructors
+        template <std::same_as<T>... Ts>
+        constexpr MatrixBase(Ts&&... payload) : STORAGETYPE<T, M, N, 1z>(std::forward<T>(payload)...) {}
+
         // Identity matrix for some reason
-        constexpr static auto I() requires(M == N) { return identityInternal(std::make_index_sequence<M*N>{}); }
+        constexpr static auto I() requires(M == N) { return identityInternal(MAKEINDICES(M*N)); }
 
         // Accessors
-        constexpr       T& operator[](size_t m, size_t n)       { return this->me()->get(m, n); }
-        constexpr const T& operator[](size_t m, size_t n) const { return this->me()->get(m, n); }
-        constexpr ReferenceType<      T, N, 1uz, 1uz, VectorBase> getRow(size_t row)       { return { this->me()->data, static_cast<ssize_t>(row * N) }; }
-        constexpr ReferenceType<const T, N, 1uz, 1uz, VectorBase> getRow(size_t row) const { return { this->me()->data, static_cast<ssize_t>(row * N) }; }
-        constexpr ReferenceType<      T, M, 1uz,   N, VectorBase> getCol(size_t col)       { return { this->me()->data, static_cast<ssize_t>(col) }; }
-        constexpr ReferenceType<const T, M, 1uz,   N, VectorBase> getCol(size_t col) const { return { this->me()->data, static_cast<ssize_t>(col) }; }
-        constexpr ReferenceType<      T, std::min(M, N), 1uz, N + 1uz, VectorBase> getDiag()       { return { this->me()->data, 0z }; }
-        constexpr ReferenceType<const T, std::min(M, N), 1uz, N + 1uz, VectorBase> getDiag() const { return { this->me()->data, 0z }; }
+        constexpr decltype(auto) operator[](this auto& self, size_t m, size_t n) { return self.get(m, n); }
+        template <class MYTYPE> constexpr auto getRow(this MYTYPE& self, size_t row) { return VectorBase<COPYCONSTFORTYPE(MYTYPE, T), N,     S, ReferenceType>{ self.data, static_cast<ssize_t>(row * N * S) }; }
+        template <class MYTYPE> constexpr auto getCol(this MYTYPE& self, size_t col) { return VectorBase<COPYCONSTFORTYPE(MYTYPE, T), M, N * S, ReferenceType>{ self.data, static_cast<ssize_t>(col     * S) }; }
+        template <class MYTYPE> constexpr auto getDiagonal(this MYTYPE& self) { return VectorBase<COPYCONSTFORTYPE(MYTYPE, T), std::min(M, N), (N + 1z) * S, ReferenceType>{ self.data, 0z }; }
 
         // Member operators
-        template<typename T2, size_t O, class OTHERTYPE>
-        constexpr auto operator*(const MatrixBase<T2, N, O, OTHERTYPE>& m) const { return multiplyInternal(m, std::make_index_sequence<M*O>{}); }
-        template<typename T2, class OTHERTYPE>
-        constexpr auto operator+(const MatrixBase<T2, M, N, OTHERTYPE>& m) const { return binaryMapInternal([](const T& e1, const T2& e2){ return e1 + e2; }, m, std::make_index_sequence<M*N>{}); }
-        template<typename T2, class OTHERTYPE>
-        constexpr auto operator-(const MatrixBase<T2, M, N, OTHERTYPE>& m) const { return binaryMapInternal([](const T& e1, const T2& e2){ return e1 - e2; }, m, std::make_index_sequence<M*N>{}); }
+        template<typename T2, size_t O, ssize_t S2, STORAGECLASS OTHERSTORAGE>
+        constexpr auto operator*(const MatrixBase<T2, N, O, S2, OTHERSTORAGE>& m) const { return matrixMultiply(m, MAKEINDICES(M*O)); }
+        template<typename T2, ssize_t S2, STORAGECLASS OTHERSTORAGE>
+        constexpr auto operator+(const MatrixBase<T2, M, N, S2, OTHERSTORAGE>& m) const { return this->binaryMapInternal([](const T& e1, const T2& e2){ return e1 + e2; }, m, MAKEINDICES(M*N)); }
+        template<typename T2, ssize_t S2, STORAGECLASS OTHERSTORAGE>
+        constexpr auto operator-(const MatrixBase<T2, M, N, S2, OTHERSTORAGE>& m) const { return this->binaryMapInternal([](const T& e1, const T2& e2){ return e1 - e2; }, m, MAKEINDICES(M*N)); }
     };
 
     // Right-side operator overloads
-    template <typename T, size_t M, size_t N, class DERIVED>
-    constexpr std::ostream& operator<<(std::ostream& os, const MatrixBase<T, M, N, DERIVED>& m) {
+    template <typename T, size_t M, size_t N, ssize_t S, STORAGECLASS STORAGETYPE>
+    constexpr std::ostream& operator<<(std::ostream& os, const MatrixBase<T, M, N, S, STORAGETYPE>& m) {
         for (size_t i = 0uz; i < M; ++i)
             for (size_t j = 0uz; j < N; ++j)
                 os << (j ? " " : (i ? "\n" : "")) << m[i, j];
         return os;
     }
 
-    /////////////////////
-    // APPLIED CLASSES //
-    /////////////////////
+
+    ///////////////////
+    // APPLIED TYPES //
+    ///////////////////
     // These 4 are supposed to be the things you actually use; everything else above is inherited
 
     // Vector value-type struct
     template <typename T, size_t N>
-    class Vector : public ValueType<T, N, 1uz, VectorBase> {
+    class Vector : public VectorBase<T, N, 1z, ValueType> {
     public:
         template <std::same_as<T>... Ts>
-        constexpr Vector(Ts&&... payload) : ValueType<T, N, 1uz, VectorBase>(std::move(payload)...) {}
+        constexpr Vector(Ts&&... payload) : VectorBase<T, N, 1z, ValueType>(std::forward<T>(payload)...) {}
+        constexpr Vector(T value) : VectorBase<T, N, 1z, ValueType>(value, MAKEINDICES(N)) {}
     };
+    // Deduction guide to get the value of N
+    template <typename T, size_t N>
+    Vector(T) -> Vector<T, N>;
     template <typename T, std::same_as<T>... Ts>
     Vector(T&&, Ts&&...) -> Vector<T, 1uz + sizeof...(Ts)>;
 
     // Vector reference-type struct
-    template <typename T, size_t N, ssize_t S = 1uz>
-    class VectorRef : public ReferenceType<T, N, 1uz, S, VectorBase> {
+    template <typename T, size_t N, ssize_t S = 1z>
+    class VectorRef : public VectorBase<T, N, S, ReferenceType> {
     public:
-        constexpr VectorRef(T* origin, ssize_t offset = 0uz) : ReferenceType<T, N, 1uz, S, VectorBase>(origin, offset) {}
+        constexpr VectorRef(T* origin, ssize_t offset = 0z) : VectorBase<T, N, S, ReferenceType>(origin, offset) {}
     };
 
     // Matrix value-type struct
     template <typename T, size_t M, size_t N>
-    class Matrix : public ValueType<T, M, N, MatrixBase> {
-    public:
-        template <size_t... IDX> requires (sizeof...(IDX) == M*N)
-        constexpr Matrix(T (&&payload)[M][N], std::index_sequence<IDX...>) : ValueType<T, M, N, MatrixBase>(std::move(payload[IDX/N][IDX%N])...) {}
+    class Matrix : public MatrixBase<T, M, N, 1z, ValueType> {
+    private:
+        template <size_t... IDX>
+        constexpr Matrix(T (&&payload)[M][N], std::index_sequence<IDX...>) : MatrixBase<T, M, N, 1z, ValueType>(std::forward<T>(payload[IDX/N][IDX%N])...) {}
 
+    public:
         // Value-initialization constructor
-        constexpr Matrix(T (&&payload)[M][N]) : Matrix(std::move(payload), std::make_index_sequence<M*N>{}) {}
+        constexpr Matrix(T (&&payload)[M][N]) : Matrix(std::forward<T[M][N]>(payload), MAKEINDICES(M*N)) {}
     };
 
     // Matrix reference-type struct
     // TODO
+
+    #undef COPYCONSTFORTYPE
+    #undef STORAGECLASS
+    #undef MAKEINDICES
 }
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#if 0
 namespace legacy {
     ////////////
     // VECTOR //
@@ -522,4 +505,4 @@ namespace legacy {
         return os;
     }
 }
-#pragma GCC diagnostic pop
+#endif

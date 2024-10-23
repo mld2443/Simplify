@@ -1,4 +1,5 @@
-#include "svd.h"
+//#include "svd.h"
+#include "linearalgebra.h"
 
 #include <iostream>
 #include <cstdint>
@@ -39,8 +40,10 @@ int main() {
     cout << endl;
 
     // Utilities showcase
+    auto f1 = [](double a){ return a > 0.0; };
+    auto f2 = [](bool a, bool b){ return a && b; };
     v2 -= v1;
-    cout << "v2-=v1; " TEST_VEC(v2) << "\t" << TEST_VEC(v1 - v2) << "\t" TEST_VEC(v1.cross(v2)) << "\t" TEST_VEC(v2.dot(v1)) << "\t" TEST_VEC(v1.direction()) << endl;
+    cout << "v2-=v1; " TEST_VEC(v2) << "\t" << TEST_VEC(v1 - v2) << "\t" TEST_VEC(v1.cross(v2)) << "\t" TEST_VEC(v1.map(f1).fold(f2, true)) << "\t" TEST_VEC(v1.direction()) << endl;
 
     // Matrices
     constexpr auto m1 = Matrix{ { { 1.0, 0.0, 1.0, 0.0, 1.0 },
@@ -62,10 +65,11 @@ int main() {
     auto m5 = Matrix<unsigned, 5uz, 5uz>::I();
 
     m5.getRow(3uz) += Vector{ 1u, 4u, 20u, 3u, 3u };
-    m5.getCol(0uz) *= 2u;
-    m5.getDiag() *= 3u;
+    m5.getRow(0uz) = m5.getCol(4uz);
+    m5.getDiagonal() *= 3u;
 
     cout << TEST_MAT(m5) << endl;
+    cout << TEST_MAT(m1 + m1) << endl;
 
     return 0;
 }
