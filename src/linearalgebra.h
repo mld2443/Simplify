@@ -81,6 +81,11 @@ namespace linalg {
     public:
         constexpr auto fold(this const auto& self, auto func, T starting) { return self.foldInternal(func, starting, MAKEINDICES(M*N)); }
         constexpr auto map(this const auto& self, auto func) { return self.mapInternal(func, MAKEINDICES(M*N)); }
+
+        // Member operator overloads
+        constexpr auto operator-(this const auto& self)                { return self.map([  ](auto&    e){ return    -e; }); }
+        constexpr auto operator*(this const auto& self, const auto& s) { return self.map([&s](const T& e){ return e * s; }); }
+        constexpr auto operator/(this const auto& self, const auto& s) { return self.map([&s](const T& e){ return e / s; }); }
     };
 
 
@@ -146,9 +151,6 @@ namespace linalg {
         constexpr decltype(auto) operator[](this auto& self, size_t i) { return self.get(i); }
 
         // Member operator overloads
-        constexpr auto operator-() const { return this->map([](auto& e){ return -e; }); }
-        constexpr auto operator*(const auto& s) const { return this->map([&s](const T& e){ return e * s; }); }
-        constexpr auto operator/(const auto& s) const { return this->map([&s](const T& e){ return e / s; }); }
         template <typename T2, ssize_t S2, STORAGECLASS OTHERSTORAGE>
         constexpr auto operator+(const VectorBase<T2, N, S2, OTHERSTORAGE>& v) const { return this->binaryMapInternal([](const T& e1, const T2& e2){ return e1 + e2; }, v, MAKEINDICES(N)); }
         template <typename T2, ssize_t S2, STORAGECLASS OTHERSTORAGE>

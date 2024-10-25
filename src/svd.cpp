@@ -42,7 +42,7 @@ int main() {
     auto f1 = [](double a){ return a > 0.0; };
     auto f2 = [](bool a, bool b){ return a && b; };
     v2 -= v1;
-    cout << "v2-=v1; " TEST_VEC(v2) << "\t" << TEST_VEC(v1 - v2) << "\t" TEST_VEC(v1.cross(v2)) << "\t" TEST_VEC(v1.map(f1).fold(f2, true)) << "\t" TEST_VEC(v1.direction()) << endl;
+    cout << "v2-=v1; " TEST_VEC(v2) << "\t" << TEST_VEC(v2*4u) << "\t" << TEST_VEC(v1 - v2) << "\t" TEST_VEC(v1.cross(v2)) << "\t" TEST_VEC(v1.map(f1).fold(f2, true)) << "\t" TEST_VEC(v1.direction()) << endl;
 
     // Matrices
     constexpr auto m1 = Matrix{ { { 1.0, 0.0, 1.0, 0.0, 1.0 },
