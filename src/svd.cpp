@@ -2,7 +2,6 @@
 #include "linearalgebra.h"
 
 #include <iostream>
-#include <cstdint>
 
 using namespace std;
 using linalg::Vector;
@@ -64,7 +63,7 @@ int main() {
 
     auto m5 = Matrix<unsigned, 5uz, 5uz>::I();
 
-    m5.getRow(3uz) += Vector{ 1u, 4u, 20u, 3u, 3u };
+    m5.getRow(3uz) += Vector<uint32_t, 5uz>{ 4u };
     m5.getRow(0uz) = m5.getCol(4uz);
     m5.getDiagonal() *= 3u;
 
