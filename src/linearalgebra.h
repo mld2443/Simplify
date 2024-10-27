@@ -1,25 +1,175 @@
 #pragma once
 
 #include <cmath>       // sqrt
-#include <concepts>    // same_as
+#include <concepts>    // same_as, convertible_to
 #include <iostream>    // ostream
-#include <type_traits> // conditional_t, is_const_v
+#include <type_traits> // conditional_t, is_const_v, remove_reference_t
 #include <utility>     // forward, index_sequence, make_index_sequence
+#include <string>
 
 
 namespace linalg {
     // TODO:
-    // [ ] SETTLE ON PARADIGM: applied types need to exist? copy-swap?
-    // [ ] Reference type matrices?
-    // [ ] Matrix from vectors?
+    // [x] SETTLE ON PARADIGM: It's multilinear tensors now
     // [ ] vector matrix multiply?
     // [ ] Implement missing Matrix operators (*, /, +=, -=, &c.)
     // [ ] Matrix transpose
-    // [ ] Vector transpose -> Vector?
     // [ ] Vector transpose -> Matrix? Makes cartesian products simple
     // [ ] Vector reverse? -> could simply return -1 stride and with offset?
 
 
+    // Helper macros to reduce clutter, undefined at end of namespace
+    #define COPYCONSTFORTYPE(T1, T2) std::conditional_t<std::is_const_v<std::remove_reference_t<T1>>, const T2, T2>
+    #define STORAGECLASS template <ssize_t, typename, size_t...> class
+    #define MAKEINDICES(SIZE) std::make_index_sequence<SIZE>{}
+
+    ////////////////
+    // ROOT TYPES //
+    ////////////////
+
+    template <ssize_t S, typename T, size_t... DIMS>
+    class StorageRoot {
+    public:
+        class Iterator {
+        private:
+            mutable T* pos;
+
+        public:
+            constexpr Iterator(T* p) : pos(p) {}
+
+            constexpr decltype(auto)  operator*(this auto& self) { return *self.pos; }
+            constexpr decltype(auto) operator++(this auto& self) { self.pos += S; return self; }
+            constexpr bool operator==(const Iterator& o) const = default;
+        };
+
+        static constexpr size_t COUNT = (DIMS * ...);
+
+        // Iterators for for-each loops
+        constexpr auto begin(this auto& self) -> COPYCONSTFORTYPE(decltype(self), Iterator) { return { self.data }; }
+        constexpr auto   end(this auto& self) -> COPYCONSTFORTYPE(decltype(self), Iterator) { return { self.data + static_cast<ssize_t>(COUNT) * S }; }
+
+    protected:
+        // Accessor
+        template <class SELF>
+        constexpr decltype(auto) get(this SELF&& self, size_t i) { return std::forward<SELF>(self).data[static_cast<ssize_t>(i) * S]; }
+    };
+
+
+    ///////////////////
+    // STORAGE TYPES //
+    ///////////////////
+
+    // Value type that owns its own data
+    template <ssize_t, typename T, size_t... DIMS>
+    class ValueType : public StorageRoot<1z, T, DIMS...> {
+        friend StorageRoot<1z, T, DIMS...>;
+    public:
+        using StorageRoot<1z, T, DIMS...>::COUNT;
+
+        template <std::same_as<T>... Ts> requires(sizeof...(Ts) == 0uz || sizeof...(Ts) == COUNT)
+        constexpr ValueType(Ts&&... payload) : data{ payload... } {}
+
+    protected:
+        T data[COUNT];
+    };
+
+    // Reference-type that points to data (no ref counting!)
+    //   These should be treated as transient, kinda like an r-value
+    template <ssize_t, typename T, size_t... DIMS>
+    class ReferenceType : public StorageRoot<1z, T, DIMS...> {
+        friend StorageRoot<1z, T, DIMS...>;
+
+    public:
+        constexpr ReferenceType(T* origin, ssize_t offset) : data(origin + offset) {}
+
+    protected:
+        T* data;
+    };
+
+
+    //////////////////
+    // TENSOR TYPES //
+    //////////////////
+
+    // Multilinear tensor
+    template <STORAGECLASS STORAGETYPE, ssize_t S, typename T, size_t... DIMS>
+    class Tensor : public STORAGETYPE<S, T, DIMS...> {
+        using STORAGETYPE<S, T, DIMS...>::STORAGETYPE;
+        using DimArray = size_t[sizeof...(DIMS)];
+        static constexpr DimArray DIMARRAY = {DIMS...};
+
+    private:
+        // template <size_t... IDX>
+        // constexpr void prettyPrint(std::ostream& os, std::index_sequence<IDX...>&&, size_t next, auto... rest) const {
+        //     constexpr size_t index = sizeof...(rest);
+        //     constexpr auto delim = index ? "\n" : " ";
+        //     auto printLine = [&](this auto& printLine, const char* delim, auto next, auto... rest) constexpr {
+        //         os << delim << next;
+        //         printLine(" ", rest...);
+        //     };
+        //     if constexpr (index)
+        //         prettyPrint(os << delim, MAKEINDICES(next), rest...);
+        //     else
+        //         printLine("", this->get()...);
+        // }
+
+        template <class SELF, size_t STEP, size_t NEXTDIM, size_t... RESTDIMS>
+        constexpr decltype(auto) getTensor(this SELF&& self, ssize_t offset, size_t nextInd, auto... restInds) {
+            constexpr size_t THISSTEP = STEP / NEXTDIM;
+            offset += THISSTEP * nextInd;
+            if constexpr (sizeof...(restInds))
+                return std::forward<SELF>(self).template getTensor<SELF, THISSTEP, RESTDIMS...>(offset, restInds...);
+            else
+                return Tensor<ReferenceType, S, COPYCONSTFORTYPE(SELF, T), RESTDIMS...>{std::forward<SELF>(self).data, offset};
+        }
+
+    public:
+        template <class SELF>
+        constexpr decltype(auto) operator[](this SELF&& self, std::convertible_to<size_t> auto... inds) requires (sizeof...(inds) == sizeof...(DIMS)){
+            auto getIndex = [](this auto& getIndex, DimArray&& inds, size_t i = 0uz, size_t accum = 0uz) constexpr -> size_t {
+                return i == sizeof...(DIMS) ? accum : (inds[i] >= DIMARRAY[i]) ? ~0uz : getIndex(std::forward<DimArray>(inds), i + 1uz, accum * DIMARRAY[i] + inds[i]);
+            };
+            return std::forward<SELF>(self).get(getIndex({static_cast<size_t>(inds)...}));
+        }
+
+        template <class SELF, std::convertible_to<size_t> FIRST, std::convertible_to<size_t>... INDS> requires (sizeof...(INDS) + 1uz < sizeof...(DIMS))
+        constexpr decltype(auto) operator[](this SELF&& self, FIRST first, INDS... inds) {
+            return std::forward<SELF>(self).template getTensor<SELF, std::forward<SELF>(self).COUNT, DIMS...>(0z, static_cast<size_t>(first), static_cast<size_t>(inds)...);
+        }
+
+        template <STORAGECLASS STORAGETYPE2, ssize_t S2, typename T2, size_t... DIMS2>
+        friend constexpr std::ostream& operator<<(std::ostream& os, const Tensor<STORAGETYPE2, S2, T2, DIMS2...>& t);
+    };
+
+    // Right-side operator overload
+    template <STORAGECLASS STORAGETYPE, ssize_t S, typename T, size_t... DIMS>
+    constexpr std::ostream& operator<<(std::ostream& os, [[maybe_unused]] const Tensor<STORAGETYPE, S, T, DIMS...>& t) {
+        // constexpr size_t firstDim = Tensor<STORAGETYPE, S, T, DIMS...>::dims[0];
+        // t.prettyPrint(os, MAKEINDICES(firstDim), DIMS...);
+        ((os << "DIMS[") << ... << (std::to_string(DIMS) + ", "));
+        return os << "\b\b], COUNT: " << t.COUNT;
+    }
+
+
+    template <typename T, size_t M, size_t N, STORAGECLASS STORAGETYPE = ValueType, ssize_t S = 1z>
+    class Matrix : public Tensor<STORAGETYPE, S, T, M, N> {
+    private:
+        template <size_t... IDX>
+        constexpr Matrix(T (&&payload)[M][N], std::index_sequence<IDX...>) : Tensor<ValueType, S, T, M, N>(std::forward<T>(payload[IDX/N][IDX%N])...) {}
+
+    public:
+        // Value-initialization constructor
+        constexpr Matrix(T (&&payload)[M][N]) : Matrix(std::forward<T[M][N]>(payload), MAKEINDICES(M*N)) {}
+    };
+
+
+    #undef COPYCONSTFORTYPE
+    #undef STORAGECLASS
+    #undef MAKEINDICES
+}
+
+#if 0
+namespace legacy {
     // Helper macros to reduce clutter, undefined at end of namespace
     #define COPYCONSTFORTYPE(T1, T2) std::conditional_t<std::is_const_v<T1>, const T2, T2>
     #define STORAGECLASS template <typename, size_t, size_t, ssize_t> class
@@ -131,7 +281,7 @@ namespace linalg {
 
         using BaseType = T;
         template <typename TYPE>
-        using ReturnType = VectorBase<TYPE, N, 1uz, ValueType>;
+        using ReturnType = VectorBase<TYPE, N, 1z, ValueType>;
 
         // Implementation for the "broadcast" constructor, curious hack to coax the expansion but discard the values
         template <size_t... IDX>
@@ -175,7 +325,7 @@ namespace linalg {
 
         // Cross product for 3-dimensional vectors
         template <typename T2, ssize_t S2, STORAGECLASS OTHERSTORAGE>
-        constexpr ReturnType<decltype(T()*T2())> cross(this const VectorBase<T, 3ul, S, STORAGETYPE>& self, const VectorBase<T2, N, S2, OTHERSTORAGE>& v) {
+        constexpr ReturnType<decltype(T()*T2())> cross(this const VectorBase<T, 3uz, S, STORAGETYPE>& self, const VectorBase<T2, 3uz, S2, OTHERSTORAGE>& v) {
             return { self[1uz]*v[2uz] - self[2uz]*v[1uz],
                      self[2uz]*v[0uz] - self[0uz]*v[2uz],
                      self[0uz]*v[1uz] - self[1uz]*v[0uz] };
@@ -286,3 +436,4 @@ namespace linalg {
     #undef STORAGECLASS
     #undef MAKEINDICES
 }
+#endif
