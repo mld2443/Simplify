@@ -1,5 +1,39 @@
 #pragma once
 
+#if !__cpp_constexpr
+#  error "this compiler does not support constexpr"
+#elif !__cpp_if_constexpr
+#  error "this compiler does not support constexpr if"
+#elif !__cpp_concepts
+#  error "this compiler does not support concepts"
+#elif !__cpp_decltype_auto
+#  error "this compiler does not support decltype auto"
+#elif !__cpp_return_type_deduction
+#  error "this compiler does not support return type deduction"
+#elif !__cpp_inheriting_constructors
+#  error "this compiler does not support inherited constructors"
+#elif !__cpp_lambdas
+#  error "this compiler does not support lambdas"
+#elif !__cpp_fold_expressions
+#  error "this compiler does not support fold expressions"
+#elif !__cpp_nontype_template_args
+#  error "this compiler does not support non-type templates"
+#elif !__cpp_size_t_suffix
+#  error "this compiler does not support size-type suffixes" //for some reason
+#elif !__cpp_return_type_deduction
+#  error "this compiler does not support return type deduction"
+#elif !__cpp_variadic_templates
+#  error "this compiler does not support variadic templates"
+#elif !__cpp_generic_lambdas
+#  error "this compiler does not support generic lambdas"
+#elif !__cpp_deduction_guides
+#  error "this compiler does not support template deduction guides"
+#elif !__cpp_explicit_this_parameter && !(defined(__clang__) && __clang_major__ >= 18) // clang doesn't define this feature test correctly?
+#  error "this compiler does not support explicit (deducing) this"
+#elif !__cpp_multidimensional_subscript
+#  error "this compiler does not support multidimensional subscript"
+#endif
+
 #include <cmath>       // sqrt
 #include <concepts>    // same_as, convertible_to
 #include <cstddef>     // size_t, ptrdiff_t
@@ -13,12 +47,12 @@ namespace linalg {
     // TODO:
     // [x] SETTLE ON PARADIGM: It's multilinear tensors all the way down
     // [x] Generic tensor accessor
-    // [ ] Output arbitrary tensors
-    // [ ] Matrix transpose
-    // [ ] Vector transpose -> Matrix
-    // [ ] Tensor ops: the usual inline ops, negate, add, subtract, scalar mult/div, maybe inline mult/div
-    // [ ] Matrix ops: invert, determinant, identity, rank, ...
-    // [ ] Vector ops: reimpl dot, cross
+    // [ ] Output arbitrary tensors!!(4)
+    // [ ] Matrix transpose(3)
+    // [ ] Vector transpose -> Matrix(2)
+    // [ ] Tensor ops: the usual inline ops(1), negate(1), add(1), subtract(1), scalar mult/div(1), maybe inline mult/div(1)
+    // [ ] Matrix ops: invert(1), determinant(3), identity(1), rank!!!(3), matrix mult (2)(add [[nodiscard]] attr) ...
+    // [ ] Vector ops: reimpl dot (1), cross (1)
 
 
     // Helper macros to reduce clutter, undefined at end of namespace
@@ -142,7 +176,12 @@ namespace linalg {
         // Accessor
         template <class SELF, std::convertible_to<std::size_t> FIRST, std::convertible_to<std::size_t>... INDS> requires (sizeof...(INDS) < sizeof...(DIMS))
         constexpr decltype(auto) operator[](this SELF&& self, FIRST first, INDS... inds) {
+#if defined(__clang__)
+            constexpr std::size_t COUNTELEM = (DIMS * ...); // clang incorrectly identifies self.COUNT as ineligible for template argument
+            return std::forward<SELF>(self).template getTensor<SELF, COUNTELEM, DIMS...>(0uz, static_cast<std::size_t>(first), static_cast<std::size_t>(inds)...);
+#elif defined(__GNUC__)
             return std::forward<SELF>(self).template getTensor<SELF, std::forward<SELF>(self).COUNT, DIMS...>(0uz, static_cast<std::size_t>(first), static_cast<std::size_t>(inds)...);
+#endif
         }
 
         template <STORAGECLASS STORAGETYPE2, std::ptrdiff_t S2, typename T2, std::size_t... DIMS2>
