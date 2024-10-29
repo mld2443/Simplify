@@ -40,19 +40,18 @@
 #include <iostream>    // ostream
 #include <type_traits> // conditional_t, is_const_v, remove_reference_t
 #include <utility>     // forward, index_sequence, make_index_sequence
-#include <string>
 
 
 namespace linalg {
     // TODO:
     // [x] SETTLE ON PARADIGM: It's multilinear tensors all the way down
     // [x] Generic tensor accessor
-    // [ ] Output arbitrary tensors!!(4)
+    // [x] Display arbitrary tensors
     // [ ] Matrix transpose(3)
     // [ ] Vector transpose -> Matrix(2)
-    // [ ] Tensor ops: the usual inline ops(1), negate(1), add(1), subtract(1), scalar mult/div(1), maybe inline mult/div(1)
-    // [ ] Matrix ops: invert(1), determinant(3), identity(1), rank!!!(3), matrix mult (2)(add [[nodiscard]] attr) ...
-    // [ ] Vector ops: reimpl dot (1), cross (1)
+    // [ ] Tensor ops: scalar mult/div(1), negate(1), add(1), subtract(1), maybe inline mult/div(1)
+    // [ ] Matrix ops: invert(1), determinant(3), identity(1), rank(3), matrix mult (2)(add [[nodiscard]] attr) ...
+    // [ ] Vector ops: dot (1), cross (1)
 
 
     // Helper macros to reduce clutter, undefined at end of namespace
@@ -60,12 +59,12 @@ namespace linalg {
     #define STORAGECLASS template <std::ptrdiff_t, typename, std::size_t...> class
     #define MAKEINDICES(SIZE) std::make_index_sequence<SIZE>{}
 
-    ////////////////
-    // ROOT TYPES //
-    ////////////////
+    ///////////////////
+    // STORAGE TYPES //
+    ///////////////////
 
     template <std::ptrdiff_t S, typename T, std::size_t... DIMS>
-    class StorageRoot {
+    class StorageBase {
     public:
         class Iterator {
         private:
@@ -92,18 +91,14 @@ namespace linalg {
     };
 
 
-    ///////////////////
-    // STORAGE TYPES //
-    ///////////////////
-
     // Value type that owns its own data
     template <std::ptrdiff_t, typename T, std::size_t... DIMS>
-    class ValueType : public StorageRoot<1z, T, DIMS...> {
-        friend StorageRoot<1z, T, DIMS...>;
+    class ValueType : public StorageBase<1z, T, DIMS...> {
+        friend StorageBase<1z, T, DIMS...>;
     public:
-        using StorageRoot<1z, T, DIMS...>::COUNT;
+        using StorageBase<1z, T, DIMS...>::COUNT;
 
-        template <std::same_as<T>... Ts> requires(sizeof...(Ts) == 0uz || sizeof...(Ts) == COUNT)
+        template <std::same_as<T>... Ts> requires((sizeof...(Ts) == 0uz || sizeof...(Ts) == COUNT))
         constexpr ValueType(Ts&&... payload) : data{ std::forward<T>(payload)... } {}
 
     protected:
@@ -113,8 +108,8 @@ namespace linalg {
     // Reference-type that points to data (no ref counting!)
     //   These should be treated as transient, kinda like an r-value
     template <std::ptrdiff_t, typename T, std::size_t... DIMS>
-    class ReferenceType : public StorageRoot<1z, T, DIMS...> {
-        friend StorageRoot<1z, T, DIMS...>;
+    class ReferenceType : public StorageBase<1z, T, DIMS...> {
+        friend StorageBase<1z, T, DIMS...>;
 
     public:
         constexpr ReferenceType(T* origin, std::ptrdiff_t offset) : data(origin + offset) {}
@@ -132,24 +127,34 @@ namespace linalg {
     template <STORAGECLASS STORAGETYPE, std::ptrdiff_t S, typename T, std::size_t... DIMS>
     class Tensor : public STORAGETYPE<S, T, DIMS...> {
         using STORAGETYPE<S, T, DIMS...>::STORAGETYPE;
-        using DimArray = std::size_t[sizeof...(DIMS)];
-        static constexpr DimArray DIMARRAY = {DIMS...};
 
     private:
-        // template <std::size_t NEXTDIM, std::size_t... RESTDIMS>
-        // constexpr void prettyPrint(std::ostream& os) const {
-        //     std::size_t index = sizeof...(rest);
-        //     constexpr auto delim = sizeof...(rest) ? "\n" : " ";
-        //     auto printLine = [&](this auto& printLine, const char* delim, auto next, auto... rest) constexpr {
-        //         os << delim << next;
-        //         printLine(" ", rest...);
-        //     };
-        //     if constexpr (index)
-        //         prettyPrint((os << delim), MAKEINDICES(next), rest...);
-        //     else
-        //         printLine("", this->get()...);
-        // }
+        // Special 'template container' prettyPrint() uses to build compile-time c-strings
+        template <char... STR>
+        struct String {
+            static constexpr char VALUES[] = {STR..., '\0'};
+        };
 
+        // Displays arbitrary dimensional tensors in a human-readable format
+        template <std::size_t STEP, std::size_t THISDIM, std::size_t NEXTDIM = 0uz, std::size_t... RESTDIMS, char... PRFX, std::size_t... IDX>
+        constexpr void prettyPrint(std::ostream& os, std::index_sequence<IDX...>&&, std::size_t offset = 0uz, String<PRFX...> prefix = {}) const {
+            auto getString = []<std::size_t... IDX2>(std::index_sequence<IDX2...>&&) constexpr { return String<PRFX..., (' ' + static_cast<char>(0uz & IDX2))...>(); };
+
+            constexpr size_t DIMSREMAINING = sizeof...(RESTDIMS) + (NEXTDIM != 0uz) + 1uz;
+            if constexpr (DIMSREMAINING > 3uz && DIMSREMAINING % 3uz != 0uz )
+                os << (offset ? "\n" : "");
+
+            if constexpr (DIMSREMAINING % 3uz == 0uz)
+                (prettyPrint<STEP / NEXTDIM, NEXTDIM, RESTDIMS...>(os, MAKEINDICES(NEXTDIM), offset + IDX * STEP, getString(MAKEINDICES(((DIMSREMAINING - 3uz) ? (DIMSREMAINING - 3uz) : 3uz) * IDX))), ...);
+            else if constexpr (NEXTDIM)
+                (prettyPrint<STEP / NEXTDIM, NEXTDIM, RESTDIMS...>(os, MAKEINDICES(NEXTDIM), offset + IDX * STEP, String<PRFX...>{}), ...);
+            else {
+                os << (offset ? "\n" : "") << prefix.VALUES;
+                ((os << (IDX ? ", " : "") << this->get(offset + IDX)), ...) << ((offset + THISDIM < this->COUNT) ? "," : "");
+            }
+        }
+
+        // Unsure why this can't be a lambda inside operator[] but both clang and GCC refuse to expand the packs for a lambda
         template <class SELF, std::size_t STEP, std::size_t NEXTDIM, std::size_t... RESTDIMS>
         constexpr decltype(auto) getTensor(this SELF&& self, std::size_t offset, std::size_t nextInd, auto... restInds) {
             constexpr std::size_t THISSTEP = STEP / NEXTDIM;
@@ -163,45 +168,28 @@ namespace linalg {
         }
 
     public:
-#if 0
-        template <class SELF>
-        constexpr decltype(auto) operator[](this SELF&& self, std::convertible_to<std::size_t> auto... inds) requires (sizeof...(inds) == sizeof...(DIMS)){
-            auto getIndex = [](this auto& getIndex, DimArray&& inds, std::size_t i = 0uz, std::size_t accum = 0uz) constexpr -> std::size_t {
-                return i == sizeof...(DIMS) ? accum : (inds[i] >= DIMARRAY[i]) ? ~0uz : getIndex(std::forward<DimArray>(inds), i + 1uz, accum * DIMARRAY[i] + inds[i]);
-            };
-            return std::forward<SELF>(self).get(getIndex({static_cast<std::size_t>(inds)...}));
-        }
-#endif
-
         // Accessor
-        template <class SELF, std::convertible_to<std::size_t> FIRST, std::convertible_to<std::size_t>... INDS> requires (sizeof...(INDS) < sizeof...(DIMS))
-        constexpr decltype(auto) operator[](this SELF&& self, FIRST first, INDS... inds) {
-#if defined(__clang__)
-            constexpr std::size_t COUNTELEM = (DIMS * ...); // clang incorrectly identifies self.COUNT as ineligible for template argument
-            return std::forward<SELF>(self).template getTensor<SELF, COUNTELEM, DIMS...>(0uz, static_cast<std::size_t>(first), static_cast<std::size_t>(inds)...);
-#elif defined(__GNUC__)
+        template <class SELF>
+        constexpr decltype(auto) operator[](this SELF&& self, auto first, auto... inds) requires (sizeof...(inds) < sizeof...(DIMS)) {
+#ifdef __clang__
+            return std::forward<SELF>(self).template getTensor<SELF, (DIMS * ...), DIMS...>(0uz, static_cast<std::size_t>(first), static_cast<std::size_t>(inds)...);
+#else
             return std::forward<SELF>(self).template getTensor<SELF, std::forward<SELF>(self).COUNT, DIMS...>(0uz, static_cast<std::size_t>(first), static_cast<std::size_t>(inds)...);
 #endif
         }
 
-        template <STORAGECLASS STORAGETYPE2, std::ptrdiff_t S2, typename T2, std::size_t... DIMS2>
-        friend constexpr std::ostream& operator<<(std::ostream& os, const Tensor<STORAGETYPE2, S2, T2, DIMS2...>& t);
+        template <STORAGECLASS STORAGETYPE2, std::ptrdiff_t S2, typename T2, std::size_t FIRSTDIM, std::size_t... RESTDIMS>
+        friend constexpr std::ostream& operator<<(std::ostream& os, const Tensor<STORAGETYPE2, S2, T2, FIRSTDIM, RESTDIMS...>& t);
     };
 
     // Right-side operator overload
-    template <STORAGECLASS STORAGETYPE, std::ptrdiff_t S, typename T, std::size_t... DIMS>
-    constexpr std::ostream& operator<<(std::ostream& os, [[maybe_unused]] const Tensor<STORAGETYPE, S, T, DIMS...>& t) {
-#if 0
-        constexpr std::size_t firstDim = Tensor<STORAGETYPE, S, T, DIMS...>::dims[0];
-        t.prettyPrint(os, MAKEINDICES(firstDim), DIMS...);
+    template <STORAGECLASS STORAGETYPE, std::ptrdiff_t S, typename T, std::size_t FIRSTDIM, std::size_t... RESTDIMS>
+    constexpr std::ostream& operator<<(std::ostream& os, [[maybe_unused]] const Tensor<STORAGETYPE, S, T, FIRSTDIM, RESTDIMS...>& t) {
+        t.template prettyPrint<(RESTDIMS * ...), FIRSTDIM, RESTDIMS...>(os, MAKEINDICES(FIRSTDIM));
         return os;
-#else
-        ((os << "DIMS[") << ... << (std::to_string(DIMS) + ", "));
-        return os << "\b\b], COUNT: " << t.COUNT;
-#endif
     }
 
-
+    // 2-dimensional matrix
     template <typename T, std::size_t M, std::size_t N, STORAGECLASS STORAGETYPE = ValueType, std::ptrdiff_t S = 1z>
     class Matrix : public Tensor<STORAGETYPE, S, T, M, N> {
     private:
@@ -212,7 +200,6 @@ namespace linalg {
         // Value-initialization constructor
         constexpr Matrix(T (&&payload)[M][N]) : Matrix(std::forward<T[M][N]>(payload), MAKEINDICES(M*N)) {}
     };
-
 
     #undef COPYCONSTFORTYPE
     #undef STORAGECLASS
