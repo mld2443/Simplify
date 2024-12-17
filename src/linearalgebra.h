@@ -35,443 +35,431 @@
 #endif
 
 #include <cmath>       // sqrt
-#include <concepts>    // same_as, convertible_to
+#include <concepts>    // same_as
 #include <cstddef>     // size_t, ptrdiff_t
 #include <iostream>    // ostream
 #include <type_traits> // conditional_t, is_const_v, remove_reference_t
 #include <utility>     // forward, index_sequence, make_index_sequence
+#include <algorithm>   // min
+
+// Helper macros to reduce clutter, undefined at end of file
+#define COPYCONST(T1, ...) std::conditional_t<std::is_const_v<std::remove_reference_t<T1>>, const __VA_ARGS__, __VA_ARGS__>
+#define MAKESEQUENCE(SIZE) std::make_index_sequence<SIZE>{}
+#define SEQUENCE(NAME) std::index_sequence<NAME>&&
 
 
 namespace linalg {
-    // TODO:
-    // [x] SETTLE ON PARADIGM: It's multilinear tensors all the way down
-    // [x] Generic tensor accessor
-    // [x] Display arbitrary tensors
-    // [ ] Matrix transpose(3)
-    // [ ] Vector transpose -> Matrix(2)
-    // [ ] Tensor ops: scalar mult/div(1), negate(1), add(1), subtract(1), maybe inline mult/div(1)
-    // [ ] Matrix ops: invert(1), determinant(3), identity(1), rank(3), matrix mult (2)(add [[nodiscard]] attr) ...
-    // [ ] Vector ops: dot (1), cross (1)
+    template <class StorageBase, typename T, std::size_t... DIMS>
+    struct MultidimType;
 
-
-    // Helper macros to reduce clutter, undefined at end of namespace
-    #define COPYCONSTFORTYPE(T1, T2) std::conditional_t<std::is_const_v<std::remove_reference_t<T1>>, const T2, T2>
-    #define STORAGECLASS template <std::ptrdiff_t, typename, std::size_t...> class
-    #define MAKEINDICES(SIZE) std::make_index_sequence<SIZE>{}
+    template <std::size_t...> class TList {};
 
     ///////////////////
     // STORAGE TYPES //
     ///////////////////
 
-    template <std::ptrdiff_t S, typename T, std::size_t... DIMS>
-    class StorageBase {
+    // Reference type, transient type
+    template <class RefType, std::size_t C, std::size_t... DIMSANDSTEPS>
+    struct ReferenceType {
+    protected:
+        static constexpr std::size_t COUNT = C;
+        static constexpr bool ISREF = true;
+
+        constexpr decltype(auto) get(this auto& self, std::size_t i) {
+            return self.ref.get([]<std::size_t LASTSTEP, std::size_t DIM, std::size_t MYSTEP, std::size_t... REMAINS>(this auto translateIndex, std::size_t i, std::size_t accum) constexpr {
+                constexpr std::size_t THISSTEP = LASTSTEP / DIM;
+                if constexpr (sizeof...(REMAINS) / 2uz)
+                    return translateIndex.template operator()<THISSTEP, REMAINS...>(i % THISSTEP, accum + MYSTEP * (i / THISSTEP));
+                else
+                    return accum + MYSTEP * (i / THISSTEP);
+            }.template operator()<COUNT, DIMSANDSTEPS...>(i, self.offset));
+        }
+
+        template <class Self>
+        constexpr decltype(auto) deref(this Self&& self, auto first, auto... inds) {
+            return []<std::size_t THISDIM, std::size_t THISSTEP, std::size_t... REMAINS, std::size_t... NEWDIMSANDSTEPS, std::size_t... NEWDIMS>(
+                        this auto getSubstruct, Self&& self,
+                        TList<NEWDIMSANDSTEPS...>&&, TList<NEWDIMS...>&&,
+                        std::size_t offset, auto nextInd, auto... restInds) constexpr -> decltype(auto) {
+                if constexpr (std::is_same_v<decltype(nextInd), char>) { // nextInd is a wildcard
+                    if constexpr (sizeof...(restInds))             // more given indices after this wildcard
+                        return getSubstruct.template operator()<REMAINS...>(std::forward<Self>(self), TList<NEWDIMSANDSTEPS..., THISDIM, THISSTEP>{}, TList<NEWDIMS..., THISDIM>{}, offset, restInds...);
+                    else if constexpr (sizeof...(REMAINS))         // remaining dimensions are implied wildcards
+                        return getSubstruct.template operator()<REMAINS...>(std::forward<Self>(self), TList<NEWDIMSANDSTEPS..., THISDIM, THISSTEP>{}, TList<NEWDIMS..., THISDIM>{}, offset, '*');
+                    else                                           // final index was given or implied wildcard
+                        return MultidimType<ReferenceType<RefType, (NEWDIMS * ... * THISDIM), NEWDIMSANDSTEPS..., THISDIM, 1uz>, COPYCONST(Self, std::remove_cvref_t<decltype(*self.ref.data)>), NEWDIMS..., THISDIM>(self.ref, offset);
+                } else {
+                    offset += THISSTEP * static_cast<std::size_t>(nextInd);
+                    if constexpr (sizeof...(restInds))             // more constraints to get through and/or there are unconstrained dimensions
+                        return getSubstruct.template operator()<REMAINS...>(std::forward<Self>(self), TList<NEWDIMSANDSTEPS...>{}, TList<NEWDIMS...>{}, offset, restInds...);
+                    else if constexpr (sizeof...(REMAINS))         // remaining dimensions are implied wildcards
+                        return getSubstruct.template operator()<REMAINS...>(std::forward<Self>(self), TList<NEWDIMSANDSTEPS...>{}, TList<NEWDIMS...>{}, offset, '*');
+                    else if constexpr (sizeof...(NEWDIMSANDSTEPS)) // all indices were given but at least one was a wildcard
+                        return MultidimType<ReferenceType<RefType, (NEWDIMS * ...), NEWDIMSANDSTEPS...>, COPYCONST(Self, std::remove_cvref_t<decltype(*self.ref.data)>), NEWDIMS...>(self.ref, offset);
+                    else                                           // all indices given, no wildcards
+                        return self.ref.get(offset);
+                }
+            }.template operator()<DIMSANDSTEPS...>(std::forward<Self>(self), {}, {}, self.offset, first, inds...);
+        }
+
     public:
-        class Iterator {
-        private:
-            mutable T* pos;
-
-        public:
-            constexpr Iterator(T* p) : pos(p) {}
-
-            constexpr decltype(auto)  operator*(this auto& self) { return *self.pos; }
-            constexpr decltype(auto) operator++(this auto& self) { self.pos += S; return self; }
-            constexpr bool operator==(const Iterator& o) const = default;
-        };
-
-        static constexpr std::size_t COUNT = (DIMS * ...);
-
-        // Iterators for for-each loops
-        constexpr auto begin(this auto& self) -> COPYCONSTFORTYPE(decltype(self), Iterator) { return { self.data }; }
-        constexpr auto   end(this auto& self) -> COPYCONSTFORTYPE(decltype(self), Iterator) { return { self.data + static_cast<std::ptrdiff_t>(COUNT) * S }; }
+        constexpr ReferenceType(RefType& r, std::size_t o) : ref(r), offset(o) {}
 
     protected:
-        // Accessor
-        template <class SELF>
-        constexpr decltype(auto) get(this SELF&& self, std::size_t i) { return std::forward<SELF>(self).data[static_cast<std::ptrdiff_t>(i) * S]; }
+        RefType& ref;
+        std::size_t offset;
     };
 
-
-    // Value type that owns its own data
-    template <std::ptrdiff_t, typename T, std::size_t... DIMS>
-    class ValueType : public StorageBase<1z, T, DIMS...> {
-        friend StorageBase<1z, T, DIMS...>;
-    public:
-        using StorageBase<1z, T, DIMS...>::COUNT;
-
-        template <std::same_as<T>... Ts> requires((sizeof...(Ts) == 0uz || sizeof...(Ts) == COUNT))
-        constexpr ValueType(Ts&&... payload) : data{ std::forward<T>(payload)... } {}
-
+    // Simple pointer type, takes user-supplied pointer and optional stride
+    template <typename T, std::size_t C, std::ptrdiff_t STRIDE = 1z>
+    struct PointerType {
     protected:
-        T data[COUNT];
-    };
+        static constexpr std::size_t COUNT = C;
+        static constexpr bool ISREF = false;
 
-    // Reference-type that points to data (no ref counting!)
-    //   These should be treated as transient, kinda like an r-value
-    template <std::ptrdiff_t, typename T, std::size_t... DIMS>
-    class ReferenceType : public StorageBase<1z, T, DIMS...> {
-        friend StorageBase<1z, T, DIMS...>;
+        constexpr decltype(auto) get(this auto&& self, std::size_t i) { return *(self.data + static_cast<std::ptrdiff_t>(i) * STRIDE); }
 
     public:
-        constexpr ReferenceType(T* origin, std::ptrdiff_t offset) : data(origin + offset) {}
+        constexpr PointerType(T* origin) : data(origin) {}
 
     protected:
         T* data;
     };
 
+    // Value type recursive primary template
+    template <typename T, std::size_t COUNT, std::size_t DIM = 0uz, std::size_t... REST>
+    class RecursiveValueType : RecursiveValueType<T, COUNT, REST...> {
+        using Base = RecursiveValueType<T, COUNT, REST...>;
+    protected:
+        using NestedArray = typename Base::NestedArray[DIM];
+        using Base::data;
 
-    //////////////////
-    // TENSOR TYPES //
-    //////////////////
+    public:
+        constexpr RecursiveValueType(NestedArray&& payload) : Base(std::forward<typename Base::NestedArray>(*payload)) {}
+        constexpr RecursiveValueType(auto&&... payload) : Base(std::forward<T>(payload)...) {}
+    };
 
-    // Multilinear tensor
-    template <STORAGECLASS STORAGETYPE, std::ptrdiff_t S, typename T, std::size_t... DIMS>
-    class Tensor : public STORAGETYPE<S, T, DIMS...> {
-        using STORAGETYPE<S, T, DIMS...>::STORAGETYPE;
+    // Value type recursive base-case class partial template specialization
+    template <typename T, std::size_t COUNT>
+    class RecursiveValueType<T, COUNT> {
+    protected:
+        using NestedArray = T;
 
     private:
-        // Special 'template container' prettyPrint() uses to build compile-time c-strings
-        template <char... STR>
-        struct String {
-            static constexpr char VALUES[] = {STR..., '\0'};
-        };
+        template <std::size_t... IDX>
+        constexpr RecursiveValueType(SEQUENCE(IDX...), NestedArray* first) : data{ first[IDX]... } {}
 
-        // Displays arbitrary dimensional tensors in a human-readable format
+    protected:
+        constexpr RecursiveValueType(NestedArray&& first) : RecursiveValueType<T, COUNT>(MAKESEQUENCE(COUNT), &first) {}
+        constexpr RecursiveValueType(auto&&... payload) : data{ std::forward<T>(payload)... } {}
+
+        T data[COUNT];
+    };
+
+    // Top-level Value-type class
+    template <typename T, std::size_t... DIMS>
+    struct ValueType : RecursiveValueType<T, (DIMS * ... * 1uz), DIMS...> {
+    protected:
+        static constexpr std::size_t COUNT = (DIMS * ... * 1uz);
+        static constexpr bool ISREF = false;
+    private:
+        using Base = RecursiveValueType<T, COUNT, DIMS...>;
+
+    protected:
+        using Base::Base;
+        using Base::data;
+
+        constexpr decltype(auto) get(this auto&& self, std::size_t i) { return *(self.data + i); }
+    };
+
+    //////////////////////
+    // Multidimensional //
+    //////////////////////
+
+    // Convenience aliases
+    template <typename T, std::size_t... DIMS>
+    using Multidimensional = MultidimType<ValueType<T, DIMS...>, T, DIMS...>;
+    template <typename T, std::size_t M, std::size_t N, class StorageType = ValueType<T, M, N>>
+    using Matrix = MultidimType<StorageType, T, M, N>;
+    template <typename T, std::size_t M, std::size_t N, std::ptrdiff_t STRIDE = 1z>
+    using MatrixPtr = MultidimType<PointerType<T, M * N, STRIDE>, T, M, N>;
+    template <typename T, std::size_t N, class StorageType = ValueType<T, N>>
+    using Vector = MultidimType<StorageType, T, N>;
+    template <typename T, std::size_t N, std::ptrdiff_t STRIDE = 1z>
+    using VectorPtr = MultidimType<PointerType<T, N, STRIDE>, T, N>;
+
+    // Concepts for dimension-dependant specializations
+    template <class T> concept isVector = requires { T::order(); } && T::order() == 1uz;
+    template <class T> concept isMatrix = requires { T::order(); } && T::order() == 2uz;
+    template <class T> concept nonArray = !requires { T::order(); } || T::order() == 0uz;
+
+    // Deduction guides for value-initialization
+    // Anything higher than 10-dimensional can still be value-initialized, but template params must be explicit
+    template <typename T, std::size_t D0>
+    MultidimType(T (&&)[D0]) -> MultidimType<ValueType<T, D0>, T, D0>;
+    template <typename T, std::size_t D0, std::size_t D1>
+    MultidimType(T (&&)[D0][D1]) -> MultidimType<ValueType<T, D0, D1>, T, D0, D1>;
+    template <typename T, std::size_t D0, std::size_t D1, std::size_t D2>
+    MultidimType(T (&&)[D0][D1][D2]) -> MultidimType<ValueType<T, D0, D1, D2>, T, D0, D1, D2>;
+    template <typename T, std::size_t D0, std::size_t D1, std::size_t D2, std::size_t D3>
+    MultidimType(T (&&)[D0][D1][D2][D3]) -> MultidimType<ValueType<T, D0, D1, D2, D3>, T, D0, D1, D2, D3>;
+    template <typename T, std::size_t D0, std::size_t D1, std::size_t D2, std::size_t D3, std::size_t D4>
+    MultidimType(T (&&)[D0][D1][D2][D3][D4]) -> MultidimType<ValueType<T, D0, D1, D2, D3, D4>, T, D0, D1, D2, D3, D4>;
+    template <typename T, std::size_t D0, std::size_t D1, std::size_t D2, std::size_t D3, std::size_t D4, std::size_t D5>
+    MultidimType(T (&&)[D0][D1][D2][D3][D4][D5]) -> MultidimType<ValueType<T, D0, D1, D2, D3, D4, D5>, T, D0, D1, D2, D3, D4, D5>;
+    template <typename T, std::size_t D0, std::size_t D1, std::size_t D2, std::size_t D3, std::size_t D4, std::size_t D5, std::size_t D6>
+    MultidimType(T (&&)[D0][D1][D2][D3][D4][D5][D6]) -> MultidimType<ValueType<T, D0, D1, D2, D3, D4, D5, D6>, T, D0, D1, D2, D3, D4, D5, D6>;
+    template <typename T, std::size_t D0, std::size_t D1, std::size_t D2, std::size_t D3, std::size_t D4, std::size_t D5, std::size_t D6, std::size_t D7>
+    MultidimType(T (&&)[D0][D1][D2][D3][D4][D5][D6][D7]) -> MultidimType<ValueType<T, D0, D1, D2, D3, D4, D5, D6, D7>, T, D0, D1, D2, D3, D4, D5, D6, D7>;
+    template <typename T, std::size_t D0, std::size_t D1, std::size_t D2, std::size_t D3, std::size_t D4, std::size_t D5, std::size_t D6, std::size_t D7, std::size_t D8>
+    MultidimType(T (&&)[D0][D1][D2][D3][D4][D5][D6][D7][D8]) -> MultidimType<ValueType<T, D0, D1, D2, D3, D4, D5, D6, D7, D8>, T, D0, D1, D2, D3, D4, D5, D6, D7, D8>;
+    template <typename T, std::size_t D0, std::size_t D1, std::size_t D2, std::size_t D3, std::size_t D4, std::size_t D5, std::size_t D6, std::size_t D7, std::size_t D8, std::size_t D9>
+    MultidimType(T (&&)[D0][D1][D2][D3][D4][D5][D6][D7][D8][D9]) -> MultidimType<ValueType<T, D0, D1, D2, D3, D4, D5, D6, D7, D8, D9>, T, D0, D1, D2, D3, D4, D5, D6, D7, D8, D9>;
+
+    template <class StorageType, typename T, std::size_t... DIMS>
+    struct MultidimType final : StorageType {
+    private:
+        template <class, std::size_t, std::size_t...>
+        friend struct ReferenceType;
+        template <class, typename, std::size_t...>
+        friend struct MultidimType; // Allows different instantiations to use protected get()
+        template <class OtherType, typename T2, std::size_t FIRSTDIM, std::size_t... RESTDIMS>
+        friend constexpr std::ostream& operator<<(std::ostream& os, const MultidimType<OtherType, T2, FIRSTDIM, RESTDIMS...>& t);
+        using StorageType::COUNT;
+        using StorageType::get;   // Accessor addressing flat array of data, used internally to perform mappings and iterate
+
+        // Special 'template container' prettyPrint() uses to build compile-time whitespace
+        template <char... Cs> struct TString { static constexpr char STR[] = {Cs..., '\0'}; };
+
+        // Helper for operator<<, displays arbitrary dimensional structures in a human-readable format
         template <std::size_t STEP, std::size_t THISDIM, std::size_t NEXTDIM = 0uz, std::size_t... RESTDIMS, char... PRFX, std::size_t... IDX>
-        constexpr void prettyPrint(std::ostream& os, std::index_sequence<IDX...>&&, std::size_t offset = 0uz, String<PRFX...> prefix = {}) const {
-            auto getString = []<std::size_t... IDX2>(std::index_sequence<IDX2...>&&) constexpr { return String<PRFX..., (' ' + static_cast<char>(0uz & IDX2))...>(); };
+        constexpr void prettyPrint(std::ostream& os, SEQUENCE(IDX...), std::size_t offset = 0uz, TString<PRFX...> prefix = {}) const {
+            auto genSpace = []<std::size_t... IDX2>(SEQUENCE(IDX2...)) constexpr { return TString<PRFX..., (' ' + static_cast<char>(0uz & IDX2))...>(); };
 
-            constexpr size_t DIMSREMAINING = sizeof...(RESTDIMS) + (NEXTDIM != 0uz) + 1uz;
+            constexpr size_t DIMSREMAINING = sizeof...(RESTDIMS) + (NEXTDIM > 0uz) + 1uz;
             if constexpr (DIMSREMAINING > 3uz && DIMSREMAINING % 3uz != 0uz )
                 os << (offset ? "\n" : "");
 
             if constexpr (DIMSREMAINING % 3uz == 0uz)
-                (prettyPrint<STEP / NEXTDIM, NEXTDIM, RESTDIMS...>(os, MAKEINDICES(NEXTDIM), offset + IDX * STEP, getString(MAKEINDICES(((DIMSREMAINING - 3uz) ? (DIMSREMAINING - 3uz) : 3uz) * IDX))), ...);
+                (prettyPrint<STEP / NEXTDIM, NEXTDIM, RESTDIMS...>(os, MAKESEQUENCE(NEXTDIM), offset + IDX * STEP, genSpace(MAKESEQUENCE(((DIMSREMAINING - 3uz) ? (DIMSREMAINING - 3uz) : 3uz) * IDX))), ...);
             else if constexpr (NEXTDIM)
-                (prettyPrint<STEP / NEXTDIM, NEXTDIM, RESTDIMS...>(os, MAKEINDICES(NEXTDIM), offset + IDX * STEP, String<PRFX...>{}), ...);
+                (prettyPrint<STEP / NEXTDIM, NEXTDIM, RESTDIMS...>(os, MAKESEQUENCE(NEXTDIM), offset + IDX * STEP, TString<PRFX...>{}), ...);
             else {
-                os << (offset ? "\n" : "") << prefix.VALUES;
-                ((os << (IDX ? ", " : "") << this->get(offset + IDX)), ...) << ((offset + THISDIM < this->COUNT) ? "," : "");
+                os << (offset ? "\n" : "") << prefix.STR;
+                ((os << (IDX ? ", " : "") << get(offset + IDX)), ...) << ((offset + THISDIM < COUNT) ? "," : "");
             }
-        }
-
-        // Unsure why this can't be a lambda inside operator[] but both clang and GCC refuse to expand the packs for a lambda
-        template <class SELF, std::size_t STEP, std::size_t NEXTDIM, std::size_t... RESTDIMS>
-        constexpr decltype(auto) getTensor(this SELF&& self, std::size_t offset, std::size_t nextInd, auto... restInds) {
-            constexpr std::size_t THISSTEP = STEP / NEXTDIM;
-            offset += THISSTEP * nextInd;
-            if constexpr (sizeof...(restInds))
-                return std::forward<SELF>(self).template getTensor<SELF, THISSTEP, RESTDIMS...>(offset, restInds...);
-            else if constexpr (sizeof...(RESTDIMS))
-                return Tensor<ReferenceType, S, COPYCONSTFORTYPE(SELF, T), RESTDIMS...>{std::forward<SELF>(self).data, static_cast<std::ptrdiff_t>(offset)};
-            else
-                return *(std::forward<SELF>(self).data + offset);
-        }
-
-    public:
-        // Accessor
-        template <class SELF>
-        constexpr decltype(auto) operator[](this SELF&& self, auto first, auto... inds) requires (sizeof...(inds) < sizeof...(DIMS)) {
-#ifdef __clang__
-            return std::forward<SELF>(self).template getTensor<SELF, (DIMS * ...), DIMS...>(0uz, static_cast<std::size_t>(first), static_cast<std::size_t>(inds)...);
-#else
-            return std::forward<SELF>(self).template getTensor<SELF, std::forward<SELF>(self).COUNT, DIMS...>(0uz, static_cast<std::size_t>(first), static_cast<std::size_t>(inds)...);
-#endif
-        }
-
-        template <STORAGECLASS STORAGETYPE2, std::ptrdiff_t S2, typename T2, std::size_t FIRSTDIM, std::size_t... RESTDIMS>
-        friend constexpr std::ostream& operator<<(std::ostream& os, const Tensor<STORAGETYPE2, S2, T2, FIRSTDIM, RESTDIMS...>& t);
-    };
-
-    // Right-side operator overload
-    template <STORAGECLASS STORAGETYPE, std::ptrdiff_t S, typename T, std::size_t FIRSTDIM, std::size_t... RESTDIMS>
-    constexpr std::ostream& operator<<(std::ostream& os, [[maybe_unused]] const Tensor<STORAGETYPE, S, T, FIRSTDIM, RESTDIMS...>& t) {
-        t.template prettyPrint<(RESTDIMS * ...), FIRSTDIM, RESTDIMS...>(os, MAKEINDICES(FIRSTDIM));
-        return os;
-    }
-
-    // 2-dimensional matrix
-    template <typename T, std::size_t M, std::size_t N, STORAGECLASS STORAGETYPE = ValueType, std::ptrdiff_t S = 1z>
-    class Matrix : public Tensor<STORAGETYPE, S, T, M, N> {
-    private:
-        template <std::size_t... IDX>
-        constexpr Matrix(T (&&payload)[M][N], std::index_sequence<IDX...>) : Tensor<ValueType, S, T, M, N>(std::forward<T>(payload[IDX/N][IDX%N])...) {}
-
-    public:
-        // Value-initialization constructor
-        constexpr Matrix(T (&&payload)[M][N]) : Matrix(std::forward<T[M][N]>(payload), MAKEINDICES(M*N)) {}
-    };
-
-    #undef COPYCONSTFORTYPE
-    #undef STORAGECLASS
-    #undef MAKEINDICES
-}
-
-#if 0
-namespace legacy {
-    // Helper macros to reduce clutter, undefined at end of namespace
-    #define COPYCONSTFORTYPE(T1, T2) std::conditional_t<std::is_const_v<T1>, const T2, T2>
-    #define STORAGECLASS template <typename, std::size_t, std::size_t, std::ptrdiff_t> class
-    #define MAKEINDICES(SIZE) std::make_index_sequence<SIZE>{}
-
-    ////////////////
-    // ROOT TYPES //
-    ////////////////
-
-    template <typename T, std::size_t M, std::size_t N, std::ptrdiff_t S>
-    class StorageRoot {
-    public:
-        class Iterator {
-        private:
-            mutable T* pos;
-
-        public:
-            constexpr Iterator(T* p) : pos(p) {}
-
-            constexpr decltype(auto)  operator*(this auto& self) { return *self.pos; }
-            constexpr decltype(auto) operator++(this auto& self) { self.pos += S; return self; }
-            constexpr bool operator==(const Iterator& o) const = default;
-        };
-
-    public:
-        // Iterators for for-each loops
-        constexpr auto begin(this auto& self) -> COPYCONSTFORTYPE(decltype(self), Iterator) { return { self.data }; }
-        constexpr auto   end(this auto& self) -> COPYCONSTFORTYPE(decltype(self), Iterator) { return { self.data + static_cast<std::ptrdiff_t>(M*N) * S }; }
-
-    protected:
-        // Accessor
-        constexpr decltype(auto) get(this auto& self, std::size_t i) { return self.data[static_cast<std::ptrdiff_t>(i) * S]; }
-    };
-
-    template <typename T, std::size_t M, std::size_t N>
-    class TensorRoot {
-    protected:
-        template <std::size_t... IDX>
-        constexpr auto foldInternal(this const auto& self, auto& func, T starting, std::index_sequence<IDX...>) {
-            return ((starting = func(starting, self.get(IDX))), ...);
-        }
-        template <typename MYTYPE, std::size_t... IDX>
-        constexpr auto mapInternal(this const MYTYPE& self, auto func, std::index_sequence<IDX...>) {
-            return typename MYTYPE::template ReturnType<decltype(func(T()))>{ func(self.get(IDX))... };
-        }
-        template <typename MYTYPE, typename OTHER, std::size_t... IDX>
-        constexpr auto binaryMapInternal(this const MYTYPE& self, auto func, const OTHER& v, std::index_sequence<IDX...>) {
-            return typename MYTYPE::template ReturnType<decltype(func(T(), typename OTHER::BaseType()))>{ func(self.get(IDX), v.get(IDX))... };
-        }
-        template <std::size_t... IDX>
-        inline void mapWriteInternal(this auto& self, auto func, std::index_sequence<IDX...>) {
-            (func(self.get(IDX)), ...);
-        }
-        template <std::size_t... IDX>
-        inline void binaryMapWriteInternal(this auto& self, auto func, const auto& v, std::index_sequence<IDX...>) {
-            (func(self.get(IDX), v.get(IDX)), ...);
-        }
-
-    public:
-        constexpr auto fold(this const auto& self, auto func, T starting) { return self.foldInternal(func, starting, MAKEINDICES(M*N)); }
-        constexpr auto map(this const auto& self, auto func) { return self.mapInternal(func, MAKEINDICES(M*N)); }
-
-        // Member operator overloads
-        constexpr auto operator-(this const auto& self)                { return self.map([  ](auto&    e){ return    -e; }); }
-        constexpr auto operator*(this const auto& self, const auto& s) { return self.map([&s](const T& e){ return e * s; }); }
-        constexpr auto operator/(this const auto& self, const auto& s) { return self.map([&s](const T& e){ return e / s; }); }
-    };
-
-
-    ///////////////////
-    // STORAGE TYPES //
-    ///////////////////
-
-    // Value type that owns its own data
-    template <typename T, std::size_t M, std::size_t N, std::ptrdiff_t>
-    class ValueType : public StorageRoot<T, M, N, 1z> {
-        friend StorageRoot<T, M, N, 1z>;
-    public:
-        template <std::same_as<T>... Ts> requires(sizeof...(Ts) == 0uz || sizeof...(Ts) == M*N)
-        constexpr ValueType(Ts&&... payload) : data{ payload... } {}
-
-    protected:
-        T data[M*N];
-    };
-
-    // Reference-type that points to data (no ref counting!)
-    //   These should be treated as transient, kinda like an r-value
-    template <typename T, std::size_t M, std::size_t N, std::ptrdiff_t S>
-    class ReferenceType : public StorageRoot<T, M, N, S> {
-        friend StorageRoot<T, M, N, S>;
-    public:
-        constexpr ReferenceType(T* origin, std::ptrdiff_t offset) : data(origin + offset) {}
-
-    protected:
-        T* data;
-    };
-
-
-    //////////////////
-    // TENSOR TYPES //
-    //////////////////
-
-    // VECTOR
-    template <typename T, std::size_t N, std::ptrdiff_t S, STORAGECLASS STORAGETYPE>
-    class VectorBase : public STORAGETYPE<T, N, 1uz, S>, public TensorRoot<T, N, 1uz> {
-    private:
-        template <typename, std::size_t, std::size_t>
-        friend class TensorRoot;
-
-        using BaseType = T;
-        template <typename TYPE>
-        using ReturnType = VectorBase<TYPE, N, 1z, ValueType>;
-
-        // Implementation for the "broadcast" constructor, curious hack to coax the expansion but discard the values
-        template <std::size_t... IDX>
-        constexpr VectorBase(const T& value, std::index_sequence<IDX...>) : STORAGETYPE<T, N, 1uz, 1z>(value + T(0uz & IDX)...) {}
-
-        template <typename T2, std::ptrdiff_t S2, STORAGECLASS OTHERSTORAGE, std::size_t... IDX>
-        constexpr auto dotInternal(this const auto& self, const VectorBase<T2, N, S2, OTHERSTORAGE>& v, std::index_sequence<IDX...>) {
-            return ((self[IDX] * v[IDX]) + ...);
         }
 
     public:
         // Constructors
-        using STORAGETYPE<T, N, 1uz, S>::STORAGETYPE;
-        VectorBase(const T& value) : VectorBase(value, MAKEINDICES(N)) {}
+        using StorageType::StorageType;
+        static constexpr auto broadcast(T&& s) { return [&]<std::size_t... IDX>(SEQUENCE(IDX...)) constexpr { return MultidimType<StorageType, T, DIMS...>{ s + T(IDX & 0uz)... }; }(MAKESEQUENCE(COUNT)); }
 
-        // Accessor
-        constexpr decltype(auto) operator[](this auto& self, std::size_t i) { return self.get(i); }
+        // Iterator for for-each loops
+        template <class QualifiedType>
+        struct Iterator {
+        public:
+            constexpr Iterator(QualifiedType& ref, std::size_t offset = 0uz) : ref(ref), pos(offset) {}
+
+            constexpr decltype(auto) operator*() const { return ref.get(pos); }
+            constexpr auto operator++() { ++pos; return *this; }
+            constexpr bool operator==(const Iterator& o) const { return pos == o.pos; }
+
+        private:
+            QualifiedType& ref;
+            std::size_t pos;
+        };
+        constexpr auto begin(this auto& self) { return Iterator<decltype(self)>{ self }; }
+        constexpr auto   end(this auto& self) { return Iterator<decltype(self)>{ self , COUNT }; }
+
+        // Metadata
+        static constexpr std::size_t count() { return COUNT; }
+        static constexpr std::size_t order() { return sizeof...(DIMS); }
+
+        // Functional programming
+        constexpr auto map(auto&& func) const {
+            return [this]<std::size_t... IDX>(auto& func, SEQUENCE(IDX...)) constexpr {
+                return Multidimensional<decltype(func(T())), DIMS...>{ func(get(IDX))... };
+            }(func, MAKESEQUENCE(COUNT));
+        }
+        constexpr auto binaryMap(auto&& func, const auto& t) const {
+            return [this]<class OtherType, typename T2, std::size_t... IDX>(auto& func, const MultidimType<OtherType, T2, DIMS...>& t, SEQUENCE(IDX...)) constexpr {
+                return Multidimensional<decltype(func(T(), T2())), DIMS...>{ func(get(IDX), t.get(IDX))... };
+            }(func, t, MAKESEQUENCE(COUNT));
+        }
+        inline void mapWrite(auto&& func) {
+            [this]<std::size_t... IDX>(auto& func, SEQUENCE(IDX...)) constexpr {
+                (func(get(IDX)), ...);
+            }(func, MAKESEQUENCE(COUNT));
+        }
+        inline void binaryMapWrite(auto&& func, const auto& t) {
+            [this]<class OtherType, typename T2, std::size_t... IDX>(auto& func, const MultidimType<OtherType, T2, DIMS...>& t, SEQUENCE(IDX...)) constexpr {
+                (func(get(IDX), t.get(IDX)), ...);
+            }(func, t, MAKESEQUENCE(COUNT));
+        }
+        constexpr auto reduce(auto&& func, auto starting) const {
+            return [this]<std::size_t... IDX>(auto& func, auto starting, SEQUENCE(IDX...)) constexpr {
+                return ((starting = func(starting, get(IDX))), ...);
+            }(func, starting, MAKESEQUENCE(COUNT));
+        }
+        constexpr auto reduce(auto&& func) const {
+            if constexpr (COUNT == 1uz)
+                return get(0uz);
+            else
+                return [this]<std::size_t... IDX>(auto& func, T starting, SEQUENCE(IDX...)) constexpr {
+                    return ((starting = func(starting, get(1uz + IDX))), ...);
+                }(func, get(0uz), MAKESEQUENCE(COUNT - 1uz));
+        }
 
         // Member operator overloads
-        template <typename T2, std::ptrdiff_t S2, STORAGECLASS OTHERSTORAGE>
-        constexpr auto operator+(const VectorBase<T2, N, S2, OTHERSTORAGE>& v) const { return this->binaryMapInternal([](const T& e1, const T2& e2){ return e1 + e2; }, v, MAKEINDICES(N)); }
-        template <typename T2, std::ptrdiff_t S2, STORAGECLASS OTHERSTORAGE>
-        constexpr auto operator-(const VectorBase<T2, N, S2, OTHERSTORAGE>& v) const { return this->binaryMapInternal([](const T& e1, const T2& e2){ return e1 - e2; }, v, MAKEINDICES(N)); }
+        constexpr auto operator-(                      ) const { return map([  ](const T& e){ return    -e; }); }
+        constexpr auto operator*(const nonArray auto& s) const { return map([&s](const T& e){ return e * s; }); }
+        constexpr auto operator/(const nonArray auto& s) const { return map([&s](const T& e){ return e / s; }); }
+        constexpr auto operator+(const          auto& t) const { return binaryMap([](const T& e1, const auto& e2){ return e1 + e2; }, t); }
+        constexpr auto operator-(const          auto& t) const { return binaryMap([](const T& e1, const auto& e2){ return e1 - e2; }, t); }
 
         // Mutating operators
-        inline auto& operator*=(const auto& s) { this->mapWriteInternal([&s](T& e){ e *= s; }, MAKEINDICES(N)); return *this; }
-        inline auto& operator/=(const auto& s) { this->mapWriteInternal([&s](T& e){ e /= s; }, MAKEINDICES(N)); return *this; }
-        template <typename T2, std::ptrdiff_t S2, STORAGECLASS OTHERSTORAGE>
-        inline auto& operator+=(const VectorBase<T2, N, S2, OTHERSTORAGE>& v) { this->binaryMapWriteInternal([](T& e1, const T2& e2){ e1 += e2; }, v, MAKEINDICES(N)); return *this; }
-        template <typename T2, std::ptrdiff_t S2, STORAGECLASS OTHERSTORAGE>
-        inline auto& operator-=(const VectorBase<T2, N, S2, OTHERSTORAGE>& v) { this->binaryMapWriteInternal([](T& e1, const T2& e2){ e1 -= e2; }, v, MAKEINDICES(N)); return *this; }
-        template <typename T2, std::ptrdiff_t S2, STORAGECLASS OTHERSTORAGE>
-        inline auto&  operator=(const VectorBase<T2, N, S2, OTHERSTORAGE>& v) { this->binaryMapWriteInternal([](T& e1, const T2& e2){ e1  = e2; }, v, MAKEINDICES(N)); return *this; }
+        inline auto& operator*=(const nonArray auto& s) { mapWrite([&s](T& e){ e *= s; }); return *this; }
+        inline auto& operator/=(const nonArray auto& s) { mapWrite([&s](T& e){ e /= s; }); return *this; }
+        inline auto& operator+=(const          auto& t) { binaryMapWrite([](T& e1, const auto& e2){ e1 += e2; }, t); return *this; }
+        inline auto& operator-=(const          auto& t) { binaryMapWrite([](T& e1, const auto& e2){ e1 -= e2; }, t); return *this; }
+        inline auto& operator= (const          auto& t) { binaryMapWrite([](T& e1, const auto& e2){ e1 =  e2; }, t); return *this; }
 
-        // Geometric methods
-        template <typename T2, std::ptrdiff_t S2, STORAGECLASS OTHERSTORAGE>
-        constexpr T dot(const VectorBase<T2, N, S2, OTHERSTORAGE>& v) const { return dotInternal(v, MAKEINDICES(N)); }
-        constexpr T magnitudeSqr() const { return dot(*this);                }
-        constexpr T    magnitude() const { return std::sqrt(magnitudeSqr()); }
-        constexpr auto direction() const { return *this / magnitude();       }
+        template <std::size_t CONTRACTIONS, class OtherType, typename T2, std::size_t... DIMS2> requires(CONTRACTIONS > 0uz)
+        constexpr auto contract(this const MultidimType<StorageType, T, DIMS...>& , const MultidimType<OtherType, T2, DIMS2...>& ) requires([](std::size_t (&&d1)[sizeof...(DIMS)], std::size_t (&&d2)[sizeof...(DIMS2)]){
+            for (std::size_t i = 0uz; i < CONTRACTIONS; ++i)
+                if (d1[sizeof...(DIMS) - 1uz - i] != d2[i])
+                    return false;
+            return true;
+        }({ DIMS... }, { DIMS2... })) {
+            return []<std::size_t D1_FIRST, std::size_t... D1_REST, std::size_t D2_FIRST, std::size_t... D2_REST, std::size_t... FRONTDIMS>(this auto buildDims,
+                        TList<D1_FIRST, D1_REST...>&&, TList<D2_FIRST, D2_REST...>&&, TList<FRONTDIMS...>&&) constexpr {
+                if constexpr (sizeof...(D1_REST) >= CONTRACTIONS)                            // Accept dimensions off front of DIMS until only contracted dims remain
+                    return buildDims(TList<D1_REST...>{}, TList<D2_FIRST, D2_REST...>{}, TList<FRONTDIMS..., D1_FIRST>{});
+                else if constexpr (sizeof...(D2_REST) + CONTRACTIONS > sizeof...(DIMS2))    // Drop dimensions off front of DIMS2 until all contracted dims are gone
+                    return buildDims(TList<D1_FIRST, D1_REST...>{}, TList<D2_REST...>{}, TList<FRONTDIMS...>{});
+                else {
+                    using ReturnType = Multidimensional<decltype(T() * T2()), FRONTDIMS..., D2_REST...>;
 
-        // Cross product for 3-dimensional vectors
-        template <typename T2, std::ptrdiff_t S2, STORAGECLASS OTHERSTORAGE>
-        constexpr ReturnType<decltype(T()*T2())> cross(this const VectorBase<T, 3uz, S, STORAGETYPE>& self, const VectorBase<T2, 3uz, S2, OTHERSTORAGE>& v) {
+                    return ReturnType{};
+                }
+            }(TList<DIMS...>{}, TList<DIMS2...>{}, {});
+        }
+
+        template<class OtherType, typename T2, std::size_t... DIMS2> requires([](std::size_t (&&d1)[sizeof...(DIMS)], std::size_t (&&d2)[sizeof...(DIMS2)]){
+            return d1[sizeof...(DIMS) - 1uz] == d2[0uz];
+        }({ DIMS... }, { DIMS2... }))
+        constexpr auto operator*(this const MultidimType<StorageType, T, DIMS...>& self, const MultidimType<OtherType, T2, DIMS2...>& t) {
+            return self.contract<1uz>(t);
+        }
+
+        ///////////////
+        // ACCESSORS //
+        ///////////////
+
+        template <class Self>
+        constexpr decltype(auto) operator[](this Self&& self, auto first, auto... inds) requires (sizeof...(inds) < sizeof...(DIMS)) {
+            if constexpr (std::remove_cvref_t<Self>::ISREF)
+                return self.deref(first, inds...);
+            else
+                return []<std::size_t STEP, std::size_t THISDIM, std::size_t... RESTDIMS, std::size_t... DIMSANDSTEPS, std::size_t... NEWDIMS>(
+                            this auto getSubstruct, Self&& self,
+                            TList<DIMSANDSTEPS...>&&, TList<NEWDIMS...>&&,
+                            std::size_t offset, auto nextInd, auto... restInds) constexpr -> decltype(auto) {
+                    constexpr std::size_t THISSTEP = STEP / THISDIM;
+                    if constexpr (std::is_same_v<decltype(nextInd), char>) { // nextInd is a wildcard
+                        if constexpr (sizeof...(restInds))          // more given indices after this wildcard
+                            return getSubstruct.template operator()<THISSTEP, RESTDIMS...>(std::forward<Self>(self), TList<DIMSANDSTEPS..., THISDIM, THISSTEP>{}, TList<NEWDIMS..., THISDIM>{}, offset, restInds...);
+                        else if constexpr (sizeof...(RESTDIMS))     // remaining dimensions are implied wildcards
+                            return getSubstruct.template operator()<THISSTEP, RESTDIMS...>(std::forward<Self>(self), TList<DIMSANDSTEPS..., THISDIM, THISSTEP>{}, TList<NEWDIMS..., THISDIM>{}, offset, '*');
+                        else                                        // final index was given as or implied to be a wildcard
+                            return MultidimType<ReferenceType<Self, (NEWDIMS * ... * THISDIM), DIMSANDSTEPS..., THISDIM, 1uz>, COPYCONST(Self, T), NEWDIMS..., THISDIM>(std::forward<Self>(self), offset);
+                    } else {
+                        offset += THISSTEP * static_cast<std::size_t>(nextInd);
+                        if constexpr (sizeof...(restInds))          // more constraints to get through and/or there are unconstrained dimensions
+                            return getSubstruct.template operator()<THISSTEP, RESTDIMS...>(std::forward<Self>(self), TList<DIMSANDSTEPS...>{}, TList<NEWDIMS...>{}, offset, restInds...);
+                        else if constexpr (sizeof...(RESTDIMS))     // remaining dimensions are implied wildcards
+                            return getSubstruct.template operator()<THISSTEP, RESTDIMS...>(std::forward<Self>(self), TList<DIMSANDSTEPS...>{}, TList<NEWDIMS...>{}, offset, '*');
+                        else if constexpr (sizeof...(DIMSANDSTEPS)) // all indices were given but at least one was a wildcard
+                            return MultidimType<ReferenceType<Self, (NEWDIMS * ...), DIMSANDSTEPS...>, COPYCONST(Self, T), NEWDIMS...>(std::forward<Self>(self), offset);
+                        else                                        // all indices given, no wildcards
+                            return self.get(offset);
+                    }
+                }.template operator()<COUNT, DIMS...>(std::forward<Self>(self), {}, {}, 0uz, first, inds...);
+        }
+
+        template <class Self>
+        constexpr decltype(auto) getDiagonal(this Self& self) requires(std::remove_cvref_t<Self>::order() > 1uz) {
+            constexpr std::size_t SMALLEST = []<std::size_t D0, std::size_t D1, std::size_t... REST>(this auto minimum) constexpr {
+                if constexpr (sizeof...(REST)) return minimum.template operator()<std::min(D0, D1), REST...>();
+                else                           return std::min(D0, D1);
+            }.template operator()<DIMS...>();
+            constexpr std::size_t STRIDE = []<std::size_t PRODUCT, std::size_t, std::size_t... REST>(this auto calcStride) constexpr {
+                if constexpr (sizeof...(REST)) return calcStride.template operator()<PRODUCT + (REST * ...), REST...>();
+                else                           return PRODUCT;
+            }.template operator()<1uz, DIMS...>();
+
+            return MultidimType<ReferenceType<Self, SMALLEST, SMALLEST, STRIDE>, COPYCONST(Self, T), SMALLEST>{ self, 0uz };
+        }
+
+        ////////////////////////////
+        // VECTOR SPECIALIZATIONS //
+        ////////////////////////////
+
+        constexpr auto dot(this const isVector auto& self, const isVector auto& v) requires(COUNT == std::remove_cvref_t<decltype(v)>::COUNT) {
+            return self.binaryMap([](const auto& a, const auto& b){ return a * b; }, v).reduce([](const auto& a, const auto& b){ return a + b; });
+        }
+        constexpr T magnitudeSqr(this const isVector auto& self) { return self.dot(self);                 }
+        constexpr T    magnitude(this const isVector auto& self) { return std::sqrt(self.magnitudeSqr()); }
+        constexpr auto direction(this const isVector auto& self) { return self / self.magnitude();        }
+        constexpr auto covector(this isVector auto& self) { return MultidimType<ReferenceType<std::remove_reference_t<decltype(self)>, COUNT, COUNT, 1uz, 1uz, 1uz>, T, DIMS..., 1uz>{ self, 0uz }; }
+
+        template <typename T2, class OtherType>
+        constexpr Vector<decltype(T()*T2()), 3uz> cross(this const Vector<T, 3uz, StorageType>& self, const Vector<T2, 3uz, OtherType>& v) {
             return { self[1uz]*v[2uz] - self[2uz]*v[1uz],
                      self[2uz]*v[0uz] - self[0uz]*v[2uz],
                      self[0uz]*v[1uz] - self[1uz]*v[0uz] };
         }
+
+        ////////////////////////////
+        // MATRIX SPECIALIZATIONS //
+        ////////////////////////////
+
+        static constexpr auto Identity() requires(order() == 2uz) {
+            return []<std::size_t M, std::size_t N, std::size_t... IDX>(SEQUENCE(IDX...)) constexpr requires(M == N) {
+                return Matrix<T, M, N>{ T((IDX % (M + 1uz)) == 0uz)... };
+            }.template operator()<DIMS...>(MAKESEQUENCE(COUNT));
+        }
+
+        // Matrix specific accessors
+        constexpr decltype(auto) getRow(this isMatrix auto& self, std::size_t r) { return self[r]; }
+        constexpr decltype(auto) getCol(this isMatrix auto& self, std::size_t c) { return self['*', c]; }
+
+        template <std::size_t N> requires(N > 1uz)
+        constexpr T determinant(this const Matrix<T, N, N, StorageType>&) {
+            return T(); //FIXME
+        }
+
+        // template<typename T2, std::size_t M, std::size_t N, std::size_t O, class OtherType>
+        // constexpr auto operator*(this const Matrix<T, M, N, StorageType>& self, const Matrix<T2, N, O, OtherType>& m) {
+        //     return []<std::size_t... IDX>(const auto& m1, const auto& m2, SEQUENCE(IDX...)) constexpr {
+        //         return Matrix<decltype(T()*T2()), M, O>{ m1.getRow(IDX / O).dot(m2.getCol(IDX % O))... };
+        //     }(self, m, MAKESEQUENCE(M*O));
+        // }
     };
 
     // Right-side operator overloads
-    template <typename T, std::size_t N, typename T2, std::ptrdiff_t S2, STORAGECLASS OTHERSTORAGE>
-    constexpr auto operator*(const T& s, const VectorBase<T2, N, S2, OTHERSTORAGE> &v) { return v.map([&s](const T& e) { return e * s; }); }
-    template <typename T, std::size_t N, typename T2, std::ptrdiff_t S2, STORAGECLASS OTHERSTORAGE>
-    constexpr auto operator/(const T& s, const VectorBase<T2, N, S2, OTHERSTORAGE> &v) { return v.map([&s](const T& e) { return e / s; }); }
-    template <typename T, std::size_t N, std::ptrdiff_t S, STORAGECLASS STORAGETYPE>
-    constexpr std::ostream& operator<<(std::ostream& os, const VectorBase<T, N, S, STORAGETYPE>& v) {
-        for (std::size_t i = 0uz; i < N; ++i)
-            os << (i ? " " : "") << v[i];
+    template <class StorageType, typename T, std::size_t... DIMS>
+    constexpr auto operator*(const nonArray auto& s, const MultidimType<StorageType, T, DIMS...> &t) { return t.map([&s](const T& e) { return s * e; }); }
+    template <class StorageType, typename T, std::size_t... DIMS>
+    constexpr auto operator/(const nonArray auto& s, const MultidimType<StorageType, T, DIMS...> &t) { return t.map([&s](const T& e) { return s / e; }); }
+    template <class StorageType, typename T, std::size_t FIRSTDIM, std::size_t... RESTDIMS>
+    constexpr std::ostream& operator<<(std::ostream& os, const MultidimType<StorageType, T, FIRSTDIM, RESTDIMS...>& t) {
+        t.template prettyPrint<(RESTDIMS * ... * 1uz), FIRSTDIM, RESTDIMS...>(os, MAKESEQUENCE(FIRSTDIM));
         return os;
     }
-
-
-    // MATRIX
-    template <typename T, std::size_t M, std::size_t N, std::ptrdiff_t S, STORAGECLASS STORAGETYPE>
-    class MatrixBase : public STORAGETYPE<T, M, N, S>, public TensorRoot<T, M, N> {
-    private:
-        template <typename, std::size_t, std::size_t>
-        friend class TensorRoot;
-
-        using BaseType = T;
-        template <typename TYPE>
-        using ReturnType = MatrixBase<TYPE, M, N, 1z, ValueType>;
-
-        template <std::size_t... IDX>
-        constexpr static ReturnType<T> matrixIdentity(std::index_sequence<IDX...>) {
-            return { (IDX % (M + 1uz) ? T(0) : T(1))... };
-        }
-        template <typename T2, std::size_t O, std::ptrdiff_t S2, STORAGECLASS OTHERSTORAGE, std::size_t... IDX>
-        constexpr auto matrixMultiply(const MatrixBase<T2, N, O, S2, OTHERSTORAGE>& m, std::index_sequence<IDX...>) const {
-            return MatrixBase<decltype(T()*T2()), M, O, 1z, ValueType>{ getRow(IDX / O).dot(m.getCol(IDX % O))... };
-        }
-
-    public:
-        // Constructors
-        using STORAGETYPE<T, M, N, S>::STORAGETYPE;
-
-        // Identity matrix for some reason
-        constexpr static auto I() requires(M == N) { return matrixIdentity(MAKEINDICES(M*N)); }
-
-        // Accessors
-        constexpr decltype(auto) operator[](this auto& self, std::size_t m, std::size_t n) { return self.get(n + m*N); }
-        template <class MYTYPE> constexpr auto getRow(this MYTYPE& self, std::size_t row) { return VectorBase<COPYCONSTFORTYPE(MYTYPE, T), N,     S, ReferenceType>{ self.data, static_cast<std::ptrdiff_t>(row * N * S) }; }
-        template <class MYTYPE> constexpr auto getCol(this MYTYPE& self, std::size_t col) { return VectorBase<COPYCONSTFORTYPE(MYTYPE, T), M, N * S, ReferenceType>{ self.data, static_cast<std::ptrdiff_t>(col     * S) }; }
-        template <class MYTYPE> constexpr auto getDiagonal(this MYTYPE& self) { return VectorBase<COPYCONSTFORTYPE(MYTYPE, T), std::min(M, N), (N + 1z) * S, ReferenceType>{ self.data, 0z }; }
-
-        // Member operators
-        template<typename T2, std::size_t O, std::ptrdiff_t S2, STORAGECLASS OTHERSTORAGE>
-        constexpr auto operator*(const MatrixBase<T2, N, O, S2, OTHERSTORAGE>& m) const { return matrixMultiply(m, MAKEINDICES(M*O)); }
-        template<typename T2, std::ptrdiff_t S2, STORAGECLASS OTHERSTORAGE>
-        constexpr auto operator+(const MatrixBase<T2, M, N, S2, OTHERSTORAGE>& m) const { return this->binaryMapInternal([](const T& e1, const T2& e2){ return e1 + e2; }, m, MAKEINDICES(M*N)); }
-        template<typename T2, std::ptrdiff_t S2, STORAGECLASS OTHERSTORAGE>
-        constexpr auto operator-(const MatrixBase<T2, M, N, S2, OTHERSTORAGE>& m) const { return this->binaryMapInternal([](const T& e1, const T2& e2){ return e1 - e2; }, m, MAKEINDICES(M*N)); }
-    };
-
-    // Right-side operator overloads
-    template <typename T, std::size_t M, std::size_t N, std::ptrdiff_t S, STORAGECLASS STORAGETYPE>
-    constexpr std::ostream& operator<<(std::ostream& os, const MatrixBase<T, M, N, S, STORAGETYPE>& m) {
-        for (std::size_t i = 0uz; i < M; ++i)
-            for (std::size_t j = 0uz; j < N; ++j)
-                os << (j ? " " : (i ? "\n" : "")) << m[i, j];
-        return os;
-    }
-
-
-    ///////////////////
-    // APPLIED TYPES //
-    ///////////////////
-    // These 4 are supposed to be the things you actually use; everything else above is inherited
-
-    // Vector value-type struct
-    template <typename T, std::size_t N>
-    class Vector : public VectorBase<T, N, 1z, ValueType> {
-        using VectorBase<T, N, 1z, ValueType>::VectorBase;
-    };
-    // Template deduction guide to automatically deduce N from initializer lists
-    template <typename T, std::same_as<T>... Ts>
-    Vector(T&&, Ts&&...) -> Vector<T, 1uz + sizeof...(Ts)>;
-
-    // Vector reference-type struct
-    template <typename T, std::size_t N, std::ptrdiff_t S = 1z>
-    class VectorRef : public VectorBase<T, N, S, ReferenceType> {
-        using VectorBase<T, N, S, ReferenceType>::VectorBase;
-    };
-
-    // Matrix value-type struct
-    template <typename T, std::size_t M, std::size_t N>
-    class Matrix : public MatrixBase<T, M, N, 1z, ValueType> {
-    private:
-        template <std::size_t... IDX>
-        constexpr Matrix(T (&&payload)[M][N], std::index_sequence<IDX...>) : MatrixBase<T, M, N, 1z, ValueType>(std::forward<T>(payload[IDX/N][IDX%N])...) {}
-
-    public:
-        // Value-initialization constructor
-        constexpr Matrix(T (&&payload)[M][N]) : Matrix(std::forward<T[M][N]>(payload), MAKEINDICES(M*N)) {}
-    };
-
-    // Matrix reference-type struct
-    // TODO
-
-    #undef COPYCONSTFORTYPE
-    #undef STORAGECLASS
-    #undef MAKEINDICES
 }
-#endif
+
+#undef COPYCONST
+#undef MAKESEQUENCE
+#undef SEQUENCE
