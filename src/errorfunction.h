@@ -51,7 +51,7 @@ struct QEFEdge : public Edge {
     f32v3 newPos;
     bool dirty, unsafe;
 
-    QEFEdge(nullptr_t): Edge{nullptr} {}
+    QEFEdge(std::nullptr_t): Edge{nullptr} {}
 
     void updateQEF();
     bool checkSafety() const;

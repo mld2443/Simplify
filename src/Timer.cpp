@@ -9,8 +9,8 @@ using namespace std;
 static const char *unitScales[4] = {"ns", "us", "ms", "s"};
 
 Timer::Timer(const string &name)
-    : name(name)
-    , start(chrono::steady_clock::now())
+    : start(chrono::steady_clock::now())
+    , name(name)
 {
     cout << "Start \"" << name << "\"." << endl;
 }

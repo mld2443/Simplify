@@ -1,13 +1,13 @@
 #pragma once
 
 #include <algorithm> // max
-#include <cmath>     // sqrt
+#include <cmath>     // hypot
 #include <iostream>  // istream, ostream
 
 
 template <typename T>
 struct v3 {
-    T x,y,z;
+    T x, y, z;
 
     inline v3   operator-()            const { return { -x, -y, -z };                }
     inline v3   operator+(const v3& v) const { return { x + v.x, y + v.y, z + v.z }; }
@@ -18,7 +18,7 @@ struct v3 {
     inline v3& operator-=(const v3& v) { x -= v.x; y -= v.y; z -= v.z; return *this; }
     inline v3& operator*=(T d)         { x *= d;   y *= d;   z *= d;   return *this; }
     inline v3& operator/=(T d)         { x /= d;   y /= d;   z /= d;   return *this; }
-    inline v3&  operator=(const v3& v) { x = v.x;  y = v.y;  z = v.z;  return *this; }
+    //inline v3&  operator=(const v3& v) { x = v.x;  y = v.y;  z = v.z;  return *this; }
 
     inline T    dot(const v3& v) const { return x*v.x + y*v.y + z*v.z;                           }
     inline v3 cross(const v3& v) const { return { y*v.z - z*v.y, z*v.x - x*v.z, x*v.y - y*v.x }; }

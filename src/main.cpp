@@ -41,6 +41,7 @@ static void setPerspective(float fovx, float aspect, float near, float far) {
     glMultMatrixf(matrix);
 }
 
+[[maybe_unused]]
 static void setOrthographic(float xmin, float ymin, float xmax, float ymax, float near = -1.0f, float far = 1.0f) {
     const float matrix[] = { 2.0f/(xmax - xmin), 0.0f,               0.0f,              (xmin + xmax)/(xmin - xmax),
                              0.0f,               2.0f/(ymax - ymin), 0.0f,              (ymin + ymax)/(ymin - ymax),
@@ -147,7 +148,7 @@ static void motion(int x, int y) {
     glutPostRedisplay();
 }
 
-static void keyboard(unsigned char key, int x, int y) {
+static void keyboard(unsigned char key, [[maybe_unused]] int x, [[maybe_unused]] int y) {
     switch(key) {
     case ' ':
         if (::simplified) {
@@ -208,7 +209,7 @@ static void keyboard(unsigned char key, int x, int y) {
     glutPostRedisplay();
 }
 
-static void specialkey(int key, int x, int y) {
+static void specialkey(int key, [[maybe_unused]] int x, [[maybe_unused]] int y) {
     switch (key) {
     case GLUT_KEY_UP:
         ::focus[1] -= 0.05;

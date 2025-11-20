@@ -1,6 +1,5 @@
 #include "collapsible.h"
 
-#include <iostream> // cout, endl
 #include <queue>    // priority_queue, greater
 #include <set>      // set
 
