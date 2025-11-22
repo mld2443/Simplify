@@ -1,7 +1,5 @@
 #include "halfedge.h"
 
-#include <GL/gl.h> // glVertex3fv, glNormal3fv
-
 
 static uint64_t surgicalRemoval(Halfedge* he) {
     if (he->f->isTriangle()) { // Triangles get removed
@@ -78,10 +76,6 @@ void Vertex::traverseEdges(std::function<void(Halfedge*)> op) const {
     while ((it = it->flip->next) != he);
 }
 
-void Vertex::draw() const {
-    glVertex3fv(&pos.x);
-}
-
 void Vertex::invalidate() {
     he = nullptr;
 }
@@ -93,11 +87,6 @@ bool Vertex::invalid() const {
 
 f32v3 Edge::midpoint() const {
     return (he->v->pos + he->flip->v->pos) / 2.0f;
-}
-
-void Edge::draw() const {
-    he->v->draw();
-    he->flip->v->draw();
 }
 
 void Edge::invalidate() {
@@ -130,13 +119,6 @@ void Face::traversePerimeter(std::function<void(Halfedge*)> op) const {
     Halfedge *it = he;
     do op(it);
     while ((it = it->next) != he);
-}
-
-void Face::draw() const {
-    const f32v3 n = normal();
-    glNormal3fv(&n.x);
-
-    traversePerimeter([](Halfedge* he){ he->v->draw(); });
 }
 
 void Face::invalidate() {

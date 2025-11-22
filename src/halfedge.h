@@ -28,8 +28,6 @@ struct Vertex {
 
     void traverseEdges(std::function<void(Halfedge*)> op) const;
 
-    void draw() const;
-
     void invalidate();
     bool invalid() const;
 };
@@ -38,8 +36,6 @@ struct Edge {
     Halfedge *he;
 
     f32v3 midpoint() const;
-
-    void draw() const;
 
     void invalidate();
     bool invalid() const;
@@ -53,8 +49,6 @@ struct Face {
     bool isTriangle() const;
 
     void traversePerimeter(std::function<void(Halfedge*)> op) const;
-
-    void draw() const;
 
     void invalidate();
     bool invalid() const;

@@ -187,6 +187,13 @@ template <class VertexType, class EdgeType>
 void Manifold<VertexType, EdgeType>::drawFaces() const {
     list<const Face*> nonTris;
 
+    auto drawFace = [] (const Face& face) {
+        const f32v3 n = face.normal();
+        glNormal3fv(&n.x);
+
+        face.traversePerimeter([](Halfedge* he){ glVertex3fv(&he->v->pos.x); });
+    };
+
     // Should be faster
     static const GLfloat white[] = { 1.0f, 1.0f, 1.0f };
     glEnable(GL_LIGHTING);
@@ -194,7 +201,7 @@ void Manifold<VertexType, EdgeType>::drawFaces() const {
     glBegin(GL_TRIANGLES); {
         for (const Face &face : m_faces)
             if (m_trianglesOnly || face.isTriangle())
-                face.draw();
+                drawFace(face);
             else
                 nonTris.push_back(&face);
     } glEnd();
@@ -204,7 +211,7 @@ void Manifold<VertexType, EdgeType>::drawFaces() const {
     glMaterialfv(GL_FRONT, GL_AMBIENT, blue);
     for (const Face *face : nonTris) {
         glBegin(GL_POLYGON); {
-            face->draw();
+            drawFace(*face);
         } glEnd();
     }
 }
@@ -215,8 +222,10 @@ void Manifold<VertexType, EdgeType>::drawEdges() const {
     glDisable(GL_LIGHTING);
     glColor4fv(yellow);
     glBegin(GL_LINES); {
-        for (const Edge &edge : m_edges)
-            edge.draw();
+        for (const Edge &edge : m_edges) {
+            glVertex3fv(&edge.he->v->pos.x);
+            glVertex3fv(&edge.he->flip->v->pos.x);
+        }
     } glEnd();
 }
 
@@ -227,7 +236,7 @@ void Manifold<VertexType, EdgeType>::drawVertices() const {
     glColor4fv(red);
     glBegin(GL_POINTS); {
         for (const Vertex &vertex : m_vertices)
-            vertex.draw();
+            glVertex3fv(&vertex.pos.x);
     } glEnd();
 }
 
